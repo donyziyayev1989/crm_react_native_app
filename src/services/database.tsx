@@ -1,123 +1,145 @@
 import {
-    addDoc,
-    collection,
-    deleteDoc,
-    doc,
-    getDoc,
-    getDocs,
-    query,
-    QueryConstraint,
-    updateDoc,
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  QueryConstraint,
+  updateDoc,
 } from "firebase/firestore";
 import { database } from "../firebase/firebase";
+import type { Customer, District, Order, OrderLine, Product, Rate, Region, Tag, User } from "../interfaces";
 
-// ─── Re-export Firestore query helpers ───────────────────────────────────────
-// Shunday qilib foydalanuvchi faqat database.tsx dan import qilsa yetarli
+// ─── Re-export Firestore query helpers ────────────────────────────────────────
 export {
-    endAt,
-    endBefore,
-    limit,
-    limitToLast,
-    orderBy,
-    startAfter,
-    startAt,
-    where
+  endAt,
+  endBefore,
+  limit,
+  limitToLast,
+  orderBy,
+  startAfter,
+  startAt,
+  where
 } from "firebase/firestore";
 
-// ─── Interface ────────────────────────────────────────────────────────────────
+// ─── Firestore Collection Names ───────────────────────────────────────────────
+export type CollectionName =
+  | "users"
+  | "orders"
+  | "products"
+  | "regions"
+  | "districts"
+  | "order_lines"
+  | "customers"
+  | "tags"
+  | "rates";
 
-interface CollectionMethods {
+// ─── Entity interfaces are defined in src/interfaces/index.ts ─────────────────
+
+// ─── Collection → Entity map (type-safe) ─────────────────────────────────────
+interface CollectionEntityMap {
+  users: User;
+  orders: Order;
+  products: Product;
+  regions: Region;
+  districts: District;
+  order_lines: OrderLine;
+  customers: Customer;
+  tags: Tag;
+  rates: Rate;
+}
+
+// ─── Generic CollectionMethods ────────────────────────────────────────────────
+interface CollectionMethods<T> {
   /**
-   * Collectiondagi hujjatlarni qaytaradi.
-   * Firestore ning native constraint larini spread argument sifatida qabul qiladi.
+   * Barchasi yoki filterlangan ro'yxatni qaytaradi.
    *
    * @example
-   * import db, { where, orderBy, limit } from "../../services/database";
-   *
-   * // Barchasi
-   * db.users.list()
-   *
-   * // Bitta shart
-   * db.users.list(where("name", "==", "Doniyor"))
-   *
-   * // Bir nechta shart
-   * db.orders.list(
-   *   where("status", "==", "pending"),
-   *   where("total", ">", 100),
-   *   orderBy("createdAt", "desc"),
-   *   limit(20)
-   * )
+   * db.customers.list()
+   * db.customers.list(where("region_id", "==", "abc"), limit(20))
    */
-  list: (...constraints: QueryConstraint[]) => Promise<any[]>;
+  list: (...constraints: QueryConstraint[]) => Promise<T[]>;
 
   /**
    * ID bo'yicha bitta hujjatni qaytaradi.
    * @example
-   * db.users.get("abc123")
+   * db.customers.get("abc123")
    */
-  get: (id: string) => Promise<any>;
+  get: (id: string) => Promise<T | null>;
 
   /**
-   * Yangi hujjat yaratadi va uning ID sini qaytaradi.
+   * Yangi hujjat yaratadi va ID sini qaytaradi.
    * @example
-   * const id = await db.users.create({ name: "Ali" })
+   * const id = await db.customers.create({ name: "Ali", ... })
    */
-  create: (data: any) => Promise<string>;
+  create: (data: Omit<T, "id">) => Promise<string>;
 
   /**
    * Mavjud hujjatni yangilaydi.
    * @example
-   * await db.users.update("abc123", { name: "Vali" })
+   * await db.customers.update("abc123", { name: "Vali" })
    */
-  update: (id: string, data: any) => Promise<void>;
+  update: (id: string, data: Partial<Omit<T, "id">>) => Promise<void>;
 
   /**
    * Hujjatni o'chiradi.
    * @example
-   * await db.users.delete("abc123")
+   * await db.customers.delete("abc123")
    */
   delete: (id: string) => Promise<void>;
 }
 
 // ─── DB Builder ───────────────────────────────────────────────────────────────
 
-const db: { [key: string]: CollectionMethods } = {};
-const collections = ["users", "orders", "customers", "products"];
-
-collections.forEach((collectionName) => {
-  db[collectionName] = {
-    list: async (...constraints: QueryConstraint[]) => {
+function createCollection<T extends { id?: string }>(
+  collectionName: string
+): CollectionMethods<T> {
+  return {
+    list: async (...constraints: QueryConstraint[]): Promise<T[]> => {
       const colRef = collection(database, collectionName);
       const q = constraints.length > 0 ? query(colRef, ...constraints) : colRef;
-
       const snapshot = await getDocs(q);
-      const data: any[] = [];
-      snapshot.forEach((d) => data.push({ id: d.id, ...d.data() }));
-      return data;
+      return snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as T));
     },
 
-    get: async (id: string) => {
+    get: async (id: string): Promise<T | null> => {
       const docRef = doc(database, collectionName, id);
       const docSnap = await getDoc(docRef);
       if (!docSnap.exists()) return null;
-      return { id: docSnap.id, ...docSnap.data() };
+      return { id: docSnap.id, ...docSnap.data() } as T;
     },
 
-    create: async (data: any) => {
+    create: async (data: Omit<T, "id">): Promise<string> => {
       const docRef = await addDoc(collection(database, collectionName), data);
       return docRef.id;
     },
 
-    update: async (id: string, data: any) => {
+    update: async (id: string, data: Partial<Omit<T, "id">>): Promise<void> => {
       const ref = doc(database, collectionName, id);
-      await updateDoc(ref, data);
+      await updateDoc(ref, data as any);
     },
 
-    delete: async (id: string) => {
+    delete: async (id: string): Promise<void> => {
       const ref = doc(database, collectionName, id);
       await deleteDoc(ref);
     },
   };
-});
+}
+
+// ─── Typed DB Object ──────────────────────────────────────────────────────────
+
+const db: { [K in CollectionName]: CollectionMethods<CollectionEntityMap[K]> } = {
+  users:       createCollection<User>("users"),
+  orders:      createCollection<Order>("orders"),
+  products:    createCollection<Product>("products"),
+  regions:     createCollection<Region>("regions"),
+  districts:   createCollection<District>("districts"),
+  order_lines: createCollection<OrderLine>("order_lines"),
+  customers:   createCollection<Customer>("customers"),
+  tags:        createCollection<Tag>("tags"),
+  rates:       createCollection<Rate>("rates"),
+};
 
 export default db;

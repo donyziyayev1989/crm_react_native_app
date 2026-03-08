@@ -16,12 +16,13 @@ const CustomerDetail = () => {
     handleSubmit,
   } = useForm<Customer>({
     defaultValues: {
-      id: Number(customerId),
+      id: '',
       name: '',
-      mobile: '',
-      district: '',
-      rate: 0,
+      phone: '',
+      district_id: '',
+      tag_id: '',
       note: '',
+      user_id: '',
     },
   });
 

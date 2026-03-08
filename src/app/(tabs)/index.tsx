@@ -1,7 +1,6 @@
+
 import { Link } from "expo-router";
-import { useEffect } from "react";
 import { Text, View } from "react-native";
-import db, { where } from "../../services/database";
 
 
 export default function Index() {
