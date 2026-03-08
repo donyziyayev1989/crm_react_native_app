@@ -1,6 +1,6 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import React, { useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Dropdown, MultiSelect } from 'react-native-element-dropdown';
 
 interface SelectProps {
@@ -41,12 +41,12 @@ const Select = ({data, placeholder, searchPlaceholder, search, maxHeight, multiS
             <MaterialIcons name="keyboard-arrow-down" style={styles.icon} size={16} color={isFocus ? 'blue' : 'black'} />
          )}
           renderSelectedItem={(item, unSelect) => (
-            <TouchableOpacity onPress={() => unSelect && unSelect(item)}>
+            <Pressable onPress={() => unSelect && unSelect(item)}>
               <View style={styles.selectedStyle}>
                 <Text style={styles.textSelectedStyle}>{item.label}</Text>
                 <MaterialIcons color="red" name="delete-outline" size={17} />
               </View>
-            </TouchableOpacity>
+            </Pressable>
           )}
         />
   }
@@ -97,14 +97,7 @@ const styles = StyleSheet.create({
         fontSize: 15,
         color: '#111827',
         backgroundColor: '#fff',
-        shadowColor: '#555',
-        shadowOffset: {
-            width: 0,
-            height: 1,
-        },
-        shadowOpacity: 0.1,
-        shadowRadius: 1.41,
-
+        boxShadow: '0px 1px 1.41px rgba(85, 85, 85, 0.1)',
         elevation: 2,
     },
     icon: {
@@ -123,18 +116,11 @@ const styles = StyleSheet.create({
       alignItems: 'center',
       borderRadius: 14,
       backgroundColor: 'white',
-      shadowColor: '#555',
       marginTop: 8,
       marginRight: 12,
       paddingHorizontal: 12,
       paddingVertical: 8,
-      shadowOffset: {
-        width: 0,
-        height: 1,
-      },
-      shadowOpacity: 0.2,
-      shadowRadius: 1.41,
-
+      boxShadow: '0px 1px 1.41px rgba(85, 85, 85, 0.1)',
       elevation: 2,
     },
     textSelectedStyle: {
@@ -147,7 +133,7 @@ const styles = StyleSheet.create({
     },
     errorInput: {
       borderColor: '#ef4444',
-      shadowColor: '#ef4444',
+      boxShadow: '0px 1px 1.41px rgba(239, 68, 68, 0.1)',
     },
 })
 

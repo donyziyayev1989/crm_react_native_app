@@ -11,7 +11,11 @@ const CustomerLayout = () => {
             </Link>
           ), }} />
         <Stack.Screen name="[customerId]" options={{ title: 'Customer Detail', headerShown: true }} />
-        <Stack.Screen name="addCustomer" options={{ title: 'Add Customer', headerShown: true }} />
+        <Stack.Screen name="addCustomer" options={{ title: 'Add Customer', headerShown: true, headerLeft: () => (
+          <Link href="/customers/" className="text-primary">
+            <MaterialIcons name="arrow-back" size={24} />
+          </Link>
+        )}} />
     </Stack>
   )
 }

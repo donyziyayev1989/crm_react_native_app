@@ -6,27 +6,30 @@ import { Customer } from '@interfaces/index';
 import { where } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import { Controller, useForm, } from 'react-hook-form';
+import { Rating } from 'react-native-ratings';
 
 import {
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
-  Text, TextInput, View
+  Text,
+  View
 } from 'react-native';
 
 const CustomerForm = () => {
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
-  const [selectedOrder, setSelectedOrder] = useState<string | null>(null);
   const [regions, setRegions] = useState<{ label: string; value: string | number }[]>([]);
   const [districts, setDistricts] = useState<{ label: string; value: string | number; region_id?: string }[]>([]);
   const [orders, setOrders] = useState<{ label: string; value: string | number }[]>([]);
+  const [tags, setTags] = useState<{ label: string; value: string | number }[]>([]);
 
   useEffect(() => {
     const fetchRegions = async () => {
       const regions = await db.regions.list();
       const regionsdata = regions.map((region: any) => ({
         label: region.name,
-        value: region.id,
+        value: region.name,
       }));
       setRegions(regionsdata);
     };
@@ -44,7 +47,7 @@ const CustomerForm = () => {
       }
       const districtsdata = fetchedDistricts.map((district: any) => ({
         label: district.name,
-        value: district.id,
+        value: district.name,
         region_id: district.region_id,
       }));
       setDistricts(districtsdata);
@@ -61,7 +64,17 @@ const CustomerForm = () => {
       }));
       setOrders(ordersdata);
     };
+
+    const fetchTags = async () => {
+      const tags = await db.tags.list();
+      const tagsdata = tags.map((tag: any) => ({
+        label: tag.name,
+        value: tag.name,
+      }));
+      setTags(tagsdata);
+    };
     fetchOrders();
+    fetchTags();
   }, []);
 
 
@@ -72,21 +85,25 @@ const CustomerForm = () => {
     formState: { errors },
   } = useForm<Customer>({
     defaultValues: {
-      id: '',
       name: '',
       phone: '',
-      region_id: '',
-      orders: [],
-      district_id: '',
-      tag_id: '',
+      region_name: '',
+      order_ids: [],
+      district_name: '',
+      tag_ids: [],
       note: '',
       user_id: '',
       rates: 0
     },
   });
 
-  const onSubmit = (data: Customer) => {
-    console.log(data);
+  const onSubmit = async(data: Customer) => {
+    try {
+      await db.customers.create(data);
+      Alert.alert("Mijoz yaratildi");
+    } catch (error) {
+      Alert.alert("Mijoz qo'shishda xatolik")
+    }
   }
 
   return (
@@ -111,10 +128,10 @@ const CustomerForm = () => {
             name="phone"
             rules={{
               required: "Telefon kiritilishi shart",
-              pattern: { value: /^\+998 \([0-9]{2}\) [0-9]{3}-[0-9]{2}-[0-9]{2}$/, message: "Noto'g'ri telefon raqami" },
+              pattern: { value: /^\+998 [0-9]{2} [0-9]{3}-[0-9]{2}-[0-9]{2}$/, message: "Noto'g'ri telefon raqami" },
             }}
             render={({ field: { onChange, value } }) => 
-              <PhoneInput name="phone" value={value} errors={errors} onChange={onChange} placeholder="+998 ( __ ) ___-__-__"/>
+              <PhoneInput name="phone" value={value} errors={errors} onChange={onChange} placeholder="+998 __ ___-__-__"/>
             }
           />
           {errors.phone && <Text style={styles.errorText}>{errors.phone.message}</Text>}
@@ -123,14 +140,14 @@ const CustomerForm = () => {
 
         {/* Region */}
         <View style={styles.fieldGroup}>
-          <Text style={[styles.label, errors.region_id && styles.errorLabel]}>Viloyat</Text>
+          <Text style={[styles.label, errors.region_name && styles.errorLabel]}>Viloyat</Text>
           <Controller
             control={control}
-            name="region_id"
+            name="region_name"
             rules={{ required: "Viloyat kiritilishi shart" }}
             render={({ field: { onChange, value } }) => 
               <Select data={regions} 
-                      name="region_id"
+                      name="region_name"
                       placeholder="Viloyatni tanlang" 
                       searchPlaceholder="Qidirish..." 
                       value={value}
@@ -139,7 +156,7 @@ const CustomerForm = () => {
                       search={true} maxHeight={300}/>
             }
           />
-          {errors.region_id && <Text style={styles.errorText}>{errors.region_id.message}</Text>}
+          {errors.region_name && <Text style={styles.errorText}>{errors.region_name.message}</Text>}
         </View>
 
         {/* District */}
@@ -147,10 +164,10 @@ const CustomerForm = () => {
           <Text style={styles.label}>Tuman</Text>
           <Controller
             control={control}
-            name="district_id"
+            name="district_name"
             render={({ field: { onChange, value } }) => 
             <Select 
-              name="district_id"
+              name="district_name"
               data={districts} 
               errors={errors}
               placeholder="Tumanni tanlang" 
@@ -160,10 +177,14 @@ const CustomerForm = () => {
               value={value} 
               onChange={(val) => {
                 onChange(val);
+                console.log(val)
                 const district = districts.find(d => d.value === val);
-                if (district && district.region_id) {
-                  setSelectedRegion(district.region_id);
-                  setValue('region_id', district.region_id);
+                if (district) {
+                   if (district.region_id) {
+                    setSelectedRegion(district.region_id);
+                    setValue('region_name', district.region_id);
+                  }
+                  setValue('district_name', district.label);
                 }
               }}
             />
@@ -176,13 +197,37 @@ const CustomerForm = () => {
           <Text style={styles.label}>Buyurtmalar</Text>
           <Controller
             control={control}
-            name="orders"
+            name="order_ids"
             render={({ field: { onChange, value } }) => 
             <Select 
-              name="orders"
+              name="order_ids"
               data={orders} 
               errors={errors}
               placeholder="Buyurtmalar" 
+              searchPlaceholder="Qidirish..."
+              maxHeight={300} 
+              value={value} 
+              multiSelect={true}
+              onChange={(val) => {
+                onChange(val);
+              }}
+            />
+            }
+          />
+        </View>
+
+        {/* Tags */}
+        <View style={styles.fieldGroup}>
+          <Text style={styles.label}>Taglar</Text>
+          <Controller
+            control={control}
+            name="tag_ids"
+            render={({ field: { onChange, value } }) => 
+            <Select 
+              name="tag_ids"
+              data={tags} 
+              errors={errors}
+              placeholder="Taglar" 
               searchPlaceholder="Qidirish..."
               maxHeight={300} 
               value={value} 
@@ -206,14 +251,19 @@ const CustomerForm = () => {
               min: { value: 0, message: "Minimal 0" },
               max: { value: 5, message: "Maksimal 5" },
             }}
-            render={({ field: { onChange, value } }) => <TextInput
-                  style={[styles.input, errors.rates && styles.inputError]}
-                  value={String(value)}
-                  onChangeText={(v) => onChange(Number(v))}
-                  placeholder="0 - 5"
-                  placeholderTextColor="#9ca3af"
-                  keyboardType="numeric"
-                />
+            render={({ field: { onChange, value } }) => <Rating
+                type='star'
+                ratingCount={10}
+                imageSize={40}
+                showRating={false}
+                ratingBackgroundColor="red"
+                startingValue={0}
+                tintColor="#F2F2F2"
+                style={{
+                  marginRight:"auto"
+                }}
+                onFinishRating={onChange}
+              />
             }
           />
           {errors.rates && <Text style={styles.errorText}>{errors.rates.message}</Text>}

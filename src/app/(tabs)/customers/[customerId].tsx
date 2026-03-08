@@ -1,6 +1,6 @@
 import CustomerForm from '@components/customerForm';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { Customer } from '@interfaces/Customer';
+import { Customer } from '@interfaces/index';
 import { Link, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -19,8 +19,9 @@ const CustomerDetail = () => {
       id: '',
       name: '',
       phone: '',
-      district_id: '',
-      tag_id: '',
+      district_name: '',
+      region_name: '',
+      tag_ids: [],
       note: '',
       user_id: '',
     },

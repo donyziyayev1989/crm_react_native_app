@@ -48,14 +48,14 @@ export interface OrderLine {
 export interface Customer {
   id?: string;
   name: string;
-  region_id: string;    // ref → regions
-  district_id: string;  // ref → districts
+  region_name: string;    // ref → regions
+  district_name?: string; // denormalized field
   phone: string;
   user_id: string;      // ref → users
-  tag_id: string;       // ref → tags
+  tag_ids: string[];       // ref → tags
   note: string;
   rates: number;
-  orders: string[];     // ref → orders
+  order_ids: string[];     // ref → orders
 }
 
 export interface Tag {

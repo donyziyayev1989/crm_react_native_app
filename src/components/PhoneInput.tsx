@@ -13,7 +13,7 @@ const PhoneInput = ({ name, value, onChange, errors, placeholder, ...props }: In
       {...props as any}
       value={value}
       onChangeText={(masked, unmasked) => {
-        if (masked === '+' || masked === '+9' || masked === '+99' || masked === '+998' || masked === '+998 ' || masked === '+998 (') {
+        if (masked === '+' || masked === '+9' || masked === '+99' || masked === '+998' || masked === '+998 ') {
           onChange('');
         } else {
           onChange(masked); 
@@ -33,7 +33,7 @@ const PhoneInput = ({ name, value, onChange, errors, placeholder, ...props }: In
       }}
       mask={phoneMask}
       style={[styles.input, errors?.[name] && styles.inputError]}
-      placeholder={placeholder || "+998 (__) ___-__-__"}
+      placeholder={placeholder || "+998 __ ___-__-__"}
       placeholderTextColor="#9ca3af"
       keyboardType="phone-pad"
     />
@@ -50,13 +50,8 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#111827',
     backgroundColor: '#fff',
-    shadowColor: '#555',
-    shadowOffset: {
-        width: 0,
-        height: 1,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 1.41,
+    boxShadow: '0px 1px 1.41px rgba(85, 85, 85, 0.1)',
+    elevation: 2,
   },
   inputError: {
     borderColor: '#ef4444',

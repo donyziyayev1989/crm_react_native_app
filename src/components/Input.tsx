@@ -40,13 +40,8 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#111827',
     backgroundColor: '#fff',
-    shadowColor: '#555',
-    shadowOffset: {
-        width: 0,
-        height: 1,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 1.41,
+    boxShadow: '0px 1px 1.41px rgba(85, 85, 85, 0.1)',
+    elevation: 2,
   },
   textArea: {
     minHeight: 100,
