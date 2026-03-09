@@ -16,6 +16,7 @@ const CustomerLayout = () => {
             <MaterialIcons name="arrow-back" size={24} />
           </Link>
         )}} />
+        <Stack.Screen name="search_results" options={{ title: 'Qidiruv natijalari', headerShown: true }} />
     </Stack>
   )
 }

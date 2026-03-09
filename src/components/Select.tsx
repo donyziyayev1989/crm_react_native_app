@@ -31,7 +31,7 @@ const Select = ({data, placeholder, searchPlaceholder, search, maxHeight, multiS
           valueField="value"
           placeholder={placeholder}
           value={selected}
-          search
+          search={search}
           searchPlaceholder={searchPlaceholder}
           onChange={item => {
             setSelected(item);

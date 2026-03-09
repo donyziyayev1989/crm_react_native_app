@@ -4,7 +4,7 @@ import { StyleSheet } from 'react-native';
 import MaskInput from 'react-native-mask-input';
 
 const phoneMask = [
-  '+', '9', '9', '8', ' ', /\d/, /\d/, ' ', /\d/, /\d/, /\d/, '-', /\d/, /\d/, '-', /\d/, /\d/
+  '+', '9', '9', '8', ' ', /\d/, /\d/, ' ', /\d/, /\d/, /\d/, ' ', /\d/, /\d/, ' ', /\d/, /\d/
 ];
 
 const PhoneInput = ({ name, value, onChange, errors, placeholder, ...props }: InputProps & { onFocus?: any, onBlur?: any }) => {

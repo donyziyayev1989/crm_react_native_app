@@ -99,7 +99,12 @@ const CustomerForm = () => {
 
   const onSubmit = async(data: Customer) => {
     try {
-      await db.customers.create(data);
+      // Bazaga yuborishdan oldin raqamni tozalaymiz
+      const cleanedData = {
+        ...data,
+        phone: data.phone.replace(/\D/g, '') // Faqat raqamlarni qoldiramiz
+      };
+      await db.customers.create(cleanedData);
       Alert.alert("Mijoz yaratildi");
     } catch (error) {
       Alert.alert("Mijoz qo'shishda xatolik")
@@ -128,7 +133,7 @@ const CustomerForm = () => {
             name="phone"
             rules={{
               required: "Telefon kiritilishi shart",
-              pattern: { value: /^\+998 [0-9]{2} [0-9]{3}-[0-9]{2}-[0-9]{2}$/, message: "Noto'g'ri telefon raqami" },
+              pattern: { value: /^\+998 [0-9]{2} [0-9]{3} [0-9]{2} [0-9]{2}$/, message: "Noto'g'ri telefon raqami" },
             }}
             render={({ field: { onChange, value } }) => 
               <PhoneInput name="phone" value={value} errors={errors} onChange={onChange} placeholder="+998 __ ___-__-__"/>
