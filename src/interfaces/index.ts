@@ -1,5 +1,11 @@
 // ─── CRM Entity Interfaces ────────────────────────────────────────────────────
 // Diagramma: https://drawsql.app/teams/summer-3/diagrams/crm
+//
+// Firestore tuzilmasi:
+//   regions/{regionId}                    ← Region
+//   regions/{regionId}/districts/{id}     ← District (subcollection)
+//   orders/{orderId}                      ← Order
+//   orders/{orderId}/order_lines/{id}     ← OrderLine (subcollection)
 
 export interface User {
   id?: string;
@@ -13,6 +19,7 @@ export interface Order {
   name: string;
   date: string;         // ISO date string
   product_count: number;
+  lost_products:number;
 }
 
 export interface Product {
@@ -29,12 +36,18 @@ export interface Region {
 export interface District {
   id?: string;
   name: string;
-  region_id: string;    // ref → regions
+  // region_id endi Firestore path orqali belgilanadi:
+  // regions/{regionId}/districts/{districtId}
+  // Qulaylik uchun regionId ni ham saqlaymiz
+  regionId?: string;
 }
 
 export interface OrderLine {
   id?: string;
-  order_id: string;     // ref → orders
+  // order_id endi Firestore path orqali belgilanadi:
+  // orders/{orderId}/order_lines/{id}
+  // Qulaylik uchun orderId ni ham saqlaymiz
+  orderId?: string;
   customer_id: string;  // ref → customers
   product_id: string;   // ref → products
   product_count: number;

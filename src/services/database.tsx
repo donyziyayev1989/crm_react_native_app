@@ -12,6 +12,9 @@ import {
 import { database } from "../firebase/firebase";
 import type { Customer, District, Order, OrderLine, Product, Rate, Region, Tag, User } from "../interfaces";
 
+// firebase app instance – react-firebase-hooks uchun
+export { database, app as firebaseApp } from "../firebase/firebase";
+
 // ─── Re-export Firestore query helpers ────────────────────────────────────────
 export {
   endAt,
@@ -128,6 +131,60 @@ function createCollection<T extends { id?: string }>(
   };
 }
 
+// ─── Subcollection Builder ────────────────────────────────────────────────────
+// regions/{regionId}/districts  va  orders/{orderId}/order_lines uchun
+
+interface SubCollectionMethods<T> {
+  /** Parent ID bo'yicha subcollection hujjatlarini qaytaradi */
+  list: (parentId: string, ...constraints: QueryConstraint[]) => Promise<T[]>;
+  /** Yangi subcollection hujjat yaratadi */
+  create: (parentId: string, data: Omit<T, 'id'>) => Promise<string>;
+  /** Subcollection hujjatni yangilaydi */
+  update: (parentId: string, id: string, data: Partial<Omit<T, 'id'>>) => Promise<void>;
+  /** Subcollection hujjatni o'chiradi */
+  delete: (parentId: string, id: string) => Promise<void>;
+  /**
+   * Firestore collection reference – react-firebase-hooks ga uzatish uchun.
+   * @example
+   *   const [districts] = useCollectionDataOnce(db.subDistricts.ref(regionId))
+   */
+  ref: (parentId: string) => ReturnType<typeof collection>;
+}
+
+function createSubCollection<T extends { id?: string }>(
+  parentColName: string,
+  subColName: string
+): SubCollectionMethods<T> {
+  const colRef = (parentId: string) =>
+    collection(database, parentColName, parentId, subColName);
+
+  return {
+    ref: (parentId) => colRef(parentId),
+
+    list: async (parentId, ...constraints) => {
+      const ref = colRef(parentId);
+      const q = constraints.length > 0 ? query(ref, ...constraints) : ref;
+      const snapshot = await getDocs(q);
+      return snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as T));
+    },
+
+    create: async (parentId, data) => {
+      const docRef = await addDoc(colRef(parentId), data);
+      return docRef.id;
+    },
+
+    update: async (parentId, id, data) => {
+      const ref = doc(database, parentColName, parentId, subColName, id);
+      await updateDoc(ref, data as any);
+    },
+
+    delete: async (parentId, id) => {
+      const ref = doc(database, parentColName, parentId, subColName, id);
+      await deleteDoc(ref);
+    },
+  };
+}
+
 // ─── Typed DB Object ──────────────────────────────────────────────────────────
 
 const db: { [K in CollectionName]: CollectionMethods<CollectionEntityMap[K]> } = {
@@ -135,11 +192,18 @@ const db: { [K in CollectionName]: CollectionMethods<CollectionEntityMap[K]> } =
   orders:      createCollection<Order>("orders"),
   products:    createCollection<Product>("products"),
   regions:     createCollection<Region>("regions"),
-  districts:   createCollection<District>("districts"),
-  order_lines: createCollection<OrderLine>("order_lines"),
+  districts:   createCollection<District>("districts"),   // flat fallback
+  order_lines: createCollection<OrderLine>("order_lines"), // flat fallback
   customers:   createCollection<Customer>("customers"),
   tags:        createCollection<Tag>("tags"),
   rates:       createCollection<Rate>("rates"),
 };
 
+// ─── Subcollection instances ───────────────────────────────────────────────────
+/** regions/{regionId}/districts */
+export const subDistricts = createSubCollection<District>("regions", "districts");
+/** orders/{orderId}/order_lines */
+export const subOrderLines = createSubCollection<OrderLine>("orders", "order_lines");
+
 export default db;
+

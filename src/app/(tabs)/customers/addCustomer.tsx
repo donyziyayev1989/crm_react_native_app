@@ -1,15 +1,18 @@
-import CustomerForm from '@/components/customerForm';
-import React from 'react';
-import { View, } from 'react-native';
-
+import CustomerForm from "@/components/CustomerForm";
+import { useRouter } from "expo-router";
+import React from "react";
+import { View } from "react-native";
 
 const AddCustomer = () => {
-
+  const router = useRouter();
   return (
-    <View>
-      <CustomerForm />
+    <View style={{ flex: 1, backgroundColor: "#fff" }}>
+      <CustomerForm
+        onSuccess={() => router.back()}
+        onCancel={() => router.back()}
+      />
     </View>
-  )
-}
+  );
+};
 
-export default AddCustomer
+export default AddCustomer;

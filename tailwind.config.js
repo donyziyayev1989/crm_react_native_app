@@ -13,9 +13,9 @@ module.exports = {
         tertiary: "#5856D6",
         muted: "#9CA3AF",
         background: "#F2F2F7",
+        gray: "#cccccc",
       },
     },
   },
   plugins: [],
-}
-
+};

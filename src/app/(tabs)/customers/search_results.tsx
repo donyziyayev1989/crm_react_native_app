@@ -1,14 +1,19 @@
-import CustomerList from '@/components/CustomerList';
-import db, { limit, where } from '@/services/database';
-import { Customer } from '@interfaces/index';
-import { Stack, useLocalSearchParams } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import CustomerList from "@/components/CustomerList";
+import db, { limit, where } from "@/services/database";
+import { Customer } from "@interfaces/index";
+import { Stack, useLocalSearchParams } from "expo-router";
+import React, { useEffect, useState } from "react";
+import { ActivityIndicator, View } from "react-native";
 
 const SearchResults = () => {
-  const { q, order, region, orderName } = useLocalSearchParams<{ q: string, order: string, region:string, orderName: string }>();
+  const { q, order, region, orderName } = useLocalSearchParams<{
+    q?: string;
+    order?: string;
+    region?: string;
+    orderName?: string;
+  }>();
   const [results, setResults] = useState<Customer[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     const performSearch = async () => {
@@ -18,20 +23,20 @@ const SearchResults = () => {
 
         // Telefon raqami bo'yicha qidiruv
         if (q && q.trim()) {
-          const sanitizedPhone = q.replace(/\D/g, '');
+          const sanitizedPhone = q.replace(/\D/g, "");
           if (sanitizedPhone) {
-            constraints.push(where('phone', '==', sanitizedPhone));
+            constraints.push(where("phone", "==", sanitizedPhone));
           }
         }
 
         // Buyurtma turi bo'yicha filter (order_ids array-contains)
-        if (order && order !== '') {
-          constraints.push(where('order_ids', 'array-contains', order));
+        if (order && order !== "") {
+          constraints.push(where("order_ids", "array-contains", order));
         }
 
         // Viloyat bo'yicha filter
-        if (region && region !== '') {
-          constraints.push(where('region_name', '==', region));
+        if (region && region !== "") {
+          constraints.push(where("region_name", "==", region));
         }
 
         constraints.push(limit(20));
@@ -39,7 +44,7 @@ const SearchResults = () => {
         const allCustomers = await db.customers.list(...(constraints as any));
         setResults(allCustomers);
       } catch (error) {
-        console.error('Search error:', error);
+        console.error("Search error:", error);
       } finally {
         setLoading(false);
       }
@@ -57,11 +62,16 @@ const SearchResults = () => {
   }
 
   return (
-    <View className="flex-1 bg-gray-50">
-      <Stack.Screen options={{ 
-        title: `Qidiruv: ${orderName || ''} ${region || ''} ${q ? `"${q}"` : ''}`.trim().replace(/\s+/g, ' ') 
-      }} />
-      
+    <View className="flex-1">
+      <Stack.Screen
+        options={{
+          title:
+            `Qidiruv: ${(orderName && orderName + ",") || ""} ${(region && region + ",") || ""} ${q ? `"${q}"` : ""}`
+              .trim()
+              .replace(/\s+/g, " "),
+        }}
+      />
+
       <CustomerList data={results} />
     </View>
   );

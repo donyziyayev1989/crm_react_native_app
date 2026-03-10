@@ -22,7 +22,6 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Home',
-          
           tabBarIcon: ({ color, size }) => (
             <MaterialIcons name="home" size={size} color={color} />
           ),
@@ -32,6 +31,7 @@ export default function TabLayout() {
         name="orders"
         options={{
           title: 'Orders',
+          headerShown: false,
           tabBarIcon: ({ color, size }) => (
             <MaterialIcons name="shopping-cart" size={size} color={color} />
           ),

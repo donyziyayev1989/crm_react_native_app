@@ -16,14 +16,18 @@ const Search = ({ initialValue = '' } : { initialValue?: string }) => {
 
   const handleSearch = () => {
     const selectedOrder = allOrders.find(o => o.value === order);
+    const params: Record<string, string> = {};
+
+    if (val.trim()) params.q = val.trim();
+    if (order) {
+      params.order = order;
+      if (selectedOrder) params.orderName = selectedOrder.label;
+    }
+    if (region) params.region = region;
+
     router.push({
       pathname: '/customers/search_results',
-      params: { 
-        q: val.trim(), 
-        order: order || '', 
-        region: region || '',
-        orderName: selectedOrder ? selectedOrder.label : ''
-      }
+      params,
     });
   };
 

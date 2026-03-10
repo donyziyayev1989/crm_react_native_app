@@ -1,82 +1,100 @@
-import Input from '@/components/Input';
-import PhoneInput from '@/components/PhoneInput';
-import Select from '@/components/Select';
-import db from '@/services/database';
-import { Customer } from '@interfaces/index';
-import { where } from 'firebase/firestore';
-import React, { useEffect, useState } from 'react';
-import { Controller, useForm, } from 'react-hook-form';
-import { Rating } from 'react-native-ratings';
+import Input from "@/components/Input";
+import PhoneInput from "@/components/PhoneInput";
+import Select from "@/components/Select";
+import db, { database, subDistricts } from "@/services/database";
+import { formatPhone } from "@/utils/format";
+import { Customer, District } from "@interfaces/index";
+import { collection } from "firebase/firestore";
+import React, { useMemo, useState } from "react";
+import {
+  useCollectionData,
+  useCollectionOnce,
+} from "react-firebase-hooks/firestore";
+import { Controller, useForm } from "react-hook-form";
+import { Rating } from "react-native-ratings";
 
 import {
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  View
-} from 'react-native';
+  View,
+} from "react-native";
 
-const CustomerForm = () => {
-  const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
-  const [regions, setRegions] = useState<{ label: string; value: string | number }[]>([]);
-  const [districts, setDistricts] = useState<{ label: string; value: string | number; region_id?: string }[]>([]);
-  const [orders, setOrders] = useState<{ label: string; value: string | number }[]>([]);
-  const [tags, setTags] = useState<{ label: string; value: string | number }[]>([]);
+interface CustomerFormProps {
+  onSuccess?: (customerId: string, customerName: string) => void;
+  onCancel?: () => void;
+  initialData?: Customer & { id?: string };
+}
 
-  useEffect(() => {
-    const fetchRegions = async () => {
-      const regions = await db.regions.list();
-      const regionsdata = regions.map((region: any) => ({
-        label: region.name,
-        value: region.name,
-      }));
-      setRegions(regionsdata);
-    };
-    
-    fetchRegions();
-  }, []);
+const CustomerForm = ({
+  onSuccess,
+  onCancel,
+  initialData,
+}: CustomerFormProps) => {
+  const [selectedRegionId, setSelectedRegionId] = useState<string | null>(
+    initialData?.region_name || null,
+  );
 
-  useEffect(() => {
-    const fetchDistricts = async () => {
-      let fetchedDistricts;
-      if (selectedRegion) {
-        fetchedDistricts = await db.districts.list(where('region_id', '==', selectedRegion));
-      } else {
-        fetchedDistricts = await db.districts.list();
-      }
-      const districtsdata = fetchedDistricts.map((district: any) => ({
-        label: district.name,
-        value: district.name,
-        region_id: district.region_id,
-      }));
-      setDistricts(districtsdata);
-    };
-    fetchDistricts();
-  }, [selectedRegion]);
+  // ─── Regions: snapshot orqali doc.id ni olamiz ──────────────────────────────
+  // useCollectionDataOnce region nomini qaytaradi, lekin document ID ni bermaydi.
+  // useCollectionOnce esa snapshot.docs dan doc.id ni o'qishga imkon beradi.
+  // Bu muhim: selectedRegionId = "fargona" (doc ID) bo'lishi kerak,
+  // aks holda subDistricts.ref("Farg'ona") → regions/Farg'ona/districts (noto'g'ri path!)
+  const [regionsSnap] = useCollectionOnce(
+    collection(database, "regions") as any,
+  );
 
-  useEffect(() => {
-    const fetchOrders = async () => {
-      const orders = await db.orders.list();
-      const ordersdata = orders.map((order: any) => ({
-        label: order.name,
-        value: order.id,
-      }));
-      setOrders(ordersdata);
-    };
+  // ─── Districts: region tanlanganda subcollection dan real-time yuklanadi ───
+  // useCollectionData — query o'zgarganda avtomatik qayta subscribe bo'ladi
+  const districtsQuery = useMemo(
+    () => (selectedRegionId ? subDistricts.ref(selectedRegionId) : null),
+    [selectedRegionId],
+  );
+  const [districtsData] = useCollectionData<District>(districtsQuery as any, {
+    initialValue: [],
+  });
 
-    const fetchTags = async () => {
-      const tags = await db.tags.list();
-      const tagsdata = tags.map((tag: any) => ({
-        label: tag.name,
-        value: tag.name,
-      }));
-      setTags(tagsdata);
-    };
-    fetchOrders();
-    fetchTags();
-  }, []);
+  // ─── Orders: snapshot → doc.id ni value sifatida ishlatamiz ────────────────
+  // useCollectionData id bermaydi → hamma order value:'' → tanlaganda hamma tanlanadi!
+  const [ordersSnap] = useCollectionOnce(collection(database, "orders") as any);
 
+  // ─── Tags: snapshot → doc.id ─────────────────────────────────────────────
+  const [tagsSnap] = useCollectionOnce(collection(database, "tags") as any);
+
+  // ─── Select uchun formatlangan ro'yxatlar ─────────────────────────────────
+  // Region: label = doc.name, value = doc.id ("fargona", "andijon", ...)
+  const regions = useMemo(
+    () =>
+      (regionsSnap?.docs ?? []).map((d) => ({
+        label: d.data().name as string,
+        value: d.id,
+      })),
+    [regionsSnap],
+  );
+  const districts = useMemo(
+    () => (districtsData ?? []).map((d) => ({ label: d.name, value: d.name })),
+    [districtsData],
+  );
+  const orders = useMemo(
+    () =>
+      (ordersSnap?.docs ?? []).map((d) => ({
+        label: d.data().name as string,
+        value: d.id,
+      })),
+    [ordersSnap],
+  );
+  const tags = useMemo(
+    () =>
+      (tagsSnap?.docs ?? []).map((d) => ({
+        label: d.data().name as string,
+        value: d.id,
+      })),
+    [tagsSnap],
+  );
 
   const {
     control,
@@ -85,83 +103,134 @@ const CustomerForm = () => {
     formState: { errors },
   } = useForm<Customer>({
     defaultValues: {
-      name: '',
-      phone: '',
-      region_name: '',
-      order_ids: [],
-      district_name: '',
-      tag_ids: [],
-      note: '',
-      user_id: '',
-      rates: 0
+      name: initialData?.name || "",
+      phone: formatPhone(initialData?.phone) || "",
+      region_name: initialData?.region_name || "",
+      order_ids: initialData?.order_ids || [],
+      district_name: initialData?.district_name || "",
+      tag_ids: initialData?.tag_ids || [],
+      note: initialData?.note || "",
+      user_id: initialData?.user_id || "",
+      rates: initialData?.rates || 0,
     },
   });
 
-  const onSubmit = async(data: Customer) => {
+  const onSubmit = async (data: Customer) => {
     try {
-      // Bazaga yuborishdan oldin raqamni tozalaymiz
       const cleanedData = {
         ...data,
-        phone: data.phone.replace(/\D/g, '') // Faqat raqamlarni qoldiramiz
+        phone: data.phone.replace(/\D/g, ""),
       };
-      await db.customers.create(cleanedData);
-      Alert.alert("Mijoz yaratildi");
+
+      if (initialData?.id) {
+        await db.customers.update(initialData.id, cleanedData);
+        if (onSuccess) {
+          onSuccess(initialData.id, data.name);
+        } else {
+          Alert.alert("Mijoz yangilandi");
+        }
+      } else {
+        const newId = await db.customers.create(cleanedData);
+        if (onSuccess) {
+          onSuccess(newId, data.name);
+        } else {
+          Alert.alert("Mijoz yaratildi");
+        }
+      }
     } catch (error) {
-      Alert.alert("Mijoz qo'shishda xatolik")
+      console.error(error);
+      Alert.alert("Xatolik", "Saqlashda xatolik yuz berdi");
     }
-  }
+  };
 
   return (
-    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "padding"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 100}
+      style={{ flex: 1 }}
+    >
+      <ScrollView
+        contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled"
+      >
         {/* Name */}
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Ism</Text>
           <Controller
             control={control}
             name="name"
-            render={({ field: { onChange, value } }) => 
-              <Input name="name" value={value} errors={errors} onChange={onChange} placeholder="Mijoz ismi"/>
-            }
+            render={({ field: { onChange, value } }) => (
+              <Input
+                name="name"
+                value={value}
+                errors={errors}
+                onChange={onChange}
+                placeholder="Mijoz ismi"
+              />
+            )}
           />
         </View>
 
         {/* Mobile */}
         <View style={styles.fieldGroup}>
-          <Text style={[styles.label, errors.phone && styles.errorLabel]}>Telefon</Text>
+          <Text style={[styles.label, errors.phone && styles.errorLabel]}>
+            Telefon
+          </Text>
           <Controller
             control={control}
             name="phone"
             rules={{
               required: "Telefon kiritilishi shart",
-              pattern: { value: /^\+998 [0-9]{2} [0-9]{3} [0-9]{2} [0-9]{2}$/, message: "Noto'g'ri telefon raqami" },
+              pattern: {
+                value: /^\+998 [0-9]{2} [0-9]{3} [0-9]{2} [0-9]{2}$/,
+                message: "Noto'g'ri telefon raqami",
+              },
             }}
-            render={({ field: { onChange, value } }) => 
-              <PhoneInput name="phone" value={value} errors={errors} onChange={onChange} placeholder="+998 __ ___-__-__"/>
-            }
+            render={({ field: { onChange, value } }) => (
+              <PhoneInput
+                name="phone"
+                value={value}
+                errors={errors}
+                onChange={onChange}
+                placeholder="+998 __ ___-__-__"
+              />
+            )}
           />
-          {errors.phone && <Text style={styles.errorText}>{errors.phone.message}</Text>}
+          {errors.phone && (
+            <Text style={styles.errorText}>{errors.phone.message}</Text>
+          )}
         </View>
-
 
         {/* Region */}
         <View style={styles.fieldGroup}>
-          <Text style={[styles.label, errors.region_name && styles.errorLabel]}>Viloyat</Text>
+          <Text style={[styles.label, errors.region_name && styles.errorLabel]}>
+            Viloyat
+          </Text>
           <Controller
             control={control}
             name="region_name"
             rules={{ required: "Viloyat kiritilishi shart" }}
-            render={({ field: { onChange, value } }) => 
-              <Select data={regions} 
-                      name="region_name"
-                      placeholder="Viloyatni tanlang" 
-                      searchPlaceholder="Qidirish..." 
-                      value={value}
-                      errors={errors}
-                      onChange={(val) => {setSelectedRegion(val); onChange(val);}}
-                      search={true} maxHeight={300}/>
-            }
+            render={({ field: { onChange, value } }) => (
+              <Select
+                data={regions}
+                name="region_name"
+                placeholder="Viloyatni tanlang"
+                searchPlaceholder="Qidirish..."
+                value={value}
+                errors={errors}
+                onChange={(val) => {
+                  setSelectedRegionId(val);
+                  onChange(val);
+                  setValue("district_name", ""); // region o'zgarganda tuman resetlanadi
+                }}
+                search={true}
+                maxHeight={300}
+              />
+            )}
           />
-          {errors.region_name && <Text style={styles.errorText}>{errors.region_name.message}</Text>}
+          {errors.region_name && (
+            <Text style={styles.errorText}>{errors.region_name.message}</Text>
+          )}
         </View>
 
         {/* District */}
@@ -170,54 +239,46 @@ const CustomerForm = () => {
           <Controller
             control={control}
             name="district_name"
-            render={({ field: { onChange, value } }) => 
-            <Select 
-              name="district_name"
-              data={districts} 
-              errors={errors}
-              placeholder="Tumanni tanlang" 
-              searchPlaceholder="Qidirish..." 
-              search={true} 
-              maxHeight={300} 
-              value={value} 
-              onChange={(val) => {
-                onChange(val);
-                console.log(val)
-                const district = districts.find(d => d.value === val);
-                if (district) {
-                   if (district.region_id) {
-                    setSelectedRegion(district.region_id);
-                    setValue('region_name', district.region_id);
-                  }
-                  setValue('district_name', district.label);
-                }
-              }}
-            />
-            }
+            render={({ field: { onChange, value } }) => (
+              <Select
+                name="district_name"
+                data={districts}
+                errors={errors}
+                placeholder="Tumanni tanlang"
+                searchPlaceholder="Qidirish..."
+                search={true}
+                maxHeight={300}
+                value={value}
+                onChange={(val) => {
+                  onChange(val);
+                  setValue("district_name", val as string);
+                }}
+              />
+            )}
           />
         </View>
 
-         {/* Orders */}
+        {/* Orders */}
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Buyurtmalar</Text>
           <Controller
             control={control}
             name="order_ids"
-            render={({ field: { onChange, value } }) => 
-            <Select 
-              name="order_ids"
-              data={orders} 
-              errors={errors}
-              placeholder="Buyurtmalar" 
-              searchPlaceholder="Qidirish..."
-              maxHeight={300} 
-              value={value} 
-              multiSelect={true}
-              onChange={(val) => {
-                onChange(val);
-              }}
-            />
-            }
+            render={({ field: { onChange, value } }) => (
+              <Select
+                name="order_ids"
+                data={orders}
+                errors={errors}
+                placeholder="Buyurtmalar"
+                searchPlaceholder="Qidirish..."
+                maxHeight={300}
+                value={value}
+                multiSelect={true}
+                onChange={(val) => {
+                  onChange(val);
+                }}
+              />
+            )}
           />
         </View>
 
@@ -227,21 +288,21 @@ const CustomerForm = () => {
           <Controller
             control={control}
             name="tag_ids"
-            render={({ field: { onChange, value } }) => 
-            <Select 
-              name="tag_ids"
-              data={tags} 
-              errors={errors}
-              placeholder="Taglar" 
-              searchPlaceholder="Qidirish..."
-              maxHeight={300} 
-              value={value} 
-              multiSelect={true}
-              onChange={(val) => {
-                onChange(val);
-              }}
-            />
-            }
+            render={({ field: { onChange, value } }) => (
+              <Select
+                name="tag_ids"
+                data={tags}
+                errors={errors}
+                placeholder="Taglar"
+                searchPlaceholder="Qidirish..."
+                maxHeight={300}
+                value={value}
+                multiSelect={true}
+                onChange={(val) => {
+                  onChange(val);
+                }}
+              />
+            )}
           />
         </View>
 
@@ -254,24 +315,25 @@ const CustomerForm = () => {
             rules={{
               required: "Reyting kiritilishi shart",
               min: { value: 0, message: "Minimal 0" },
-              max: { value: 5, message: "Maksimal 5" },
             }}
-            render={({ field: { onChange, value } }) => <Rating
-                type='star'
+            render={({ field: { onChange, value } }) => (
+              <Rating
+                type="star"
                 ratingCount={10}
-                imageSize={40}
+                imageSize={32}
                 showRating={false}
                 ratingBackgroundColor="red"
                 startingValue={0}
-                tintColor="#F2F2F2"
                 style={{
-                  marginRight:"auto"
+                  marginRight: "auto",
                 }}
                 onFinishRating={onChange}
               />
-            }
+            )}
           />
-          {errors.rates && <Text style={styles.errorText}>{errors.rates.message}</Text>}
+          {errors.rates && (
+            <Text style={styles.errorText}>{errors.rates.message}</Text>
+          )}
         </View>
 
         {/* Note */}
@@ -281,20 +343,43 @@ const CustomerForm = () => {
             control={control}
             name="note"
             render={({ field: { onChange, value } }) => (
-              <Input name="note" value={value} errors={errors} onChange={onChange} placeholder="Qo'shimcha izoh..." multiline={true}/>
+              <Input
+                name="note"
+                value={value}
+                errors={errors}
+                onChange={onChange}
+                placeholder="Qo'shimcha izoh..."
+                multiline={true}
+              />
             )}
           />
         </View>
 
         {/* Save button (bottom) */}
-        <Pressable style={styles.saveBtn} onPress={handleSubmit(onSubmit)}>
-          <Text style={styles.saveBtnText}>Saqlash</Text>
-        </Pressable>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          {onCancel && (
+            <Pressable
+              style={[styles.saveBtn, { flex: 1, backgroundColor: "#f3f4f6" }]}
+              onPress={onCancel}
+            >
+              <Text style={[styles.saveBtnText, { color: "#374151" }]}>
+                Bekor
+              </Text>
+            </Pressable>
+          )}
+          <Pressable
+            style={[styles.saveBtn, { flex: 1 }]}
+            onPress={handleSubmit(onSubmit)}
+          >
+            <Text style={styles.saveBtnText}>Saqlash</Text>
+          </Pressable>
+        </View>
       </ScrollView>
-  )
-}
+    </KeyboardAvoidingView>
+  );
+};
 
-export default CustomerForm
+export default CustomerForm;
 
 const styles = StyleSheet.create({
   headerBtn: {
@@ -309,43 +394,43 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 13,
-    fontWeight: '600',
-    color: '#6b7280',
+    fontWeight: "600",
+    color: "#6b7280",
     marginBottom: 6,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 0.5,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderColor: "#e5e7eb",
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 15,
-    color: '#111827',
-    backgroundColor: '#fff',
+    color: "#111827",
+    backgroundColor: "#fff",
   },
   inputError: {
-    borderColor: '#ef4444',
+    borderColor: "#ef4444",
   },
   errorText: {
     marginTop: 4,
     fontSize: 12,
-    color: '#ef4444',
+    color: "#ef4444",
   },
   errorLabel: {
-    color: '#ef4444',
+    color: "#ef4444",
   },
   saveBtn: {
     marginTop: 8,
-    backgroundColor: '#6366f1',
+    backgroundColor: "#6366f1",
     borderRadius: 12,
     paddingVertical: 14,
-    alignItems: 'center',
+    alignItems: "center",
   },
   saveBtnText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: "700",
   },
 });
