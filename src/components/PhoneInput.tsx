@@ -14,6 +14,17 @@ import {
 } from "react-native";
 import MaskInput from "react-native-mask-input";
 
+let CallLogs: any;
+try {
+  CallLogs = require("react-native-call-log");
+  if (CallLogs?.default) {
+    CallLogs = CallLogs.default;
+  }
+} catch (e) {
+  // react-native-call-log is not available (e.g. in Expo Go or non-android)
+  CallLogs = null;
+}
+
 const phoneMask = [
   "+",
   "9",
@@ -65,16 +76,6 @@ const PhoneInput = ({
   };
 
   const openCallLogs = async () => {
-    let CallLogs: any = null;
-    try {
-      CallLogs = require("react-native-call-log");
-      if (CallLogs && CallLogs.default) {
-        CallLogs = CallLogs.default;
-      }
-    } catch (e) {
-      console.warn("react-native-call-log error:", e);
-    }
-
     if (!CallLogs) {
       alert(
         "Qo'ng'iroqlar tarixini ko'rish uchun ilovani 'prebuild' qilib Native rejimda ishga tushirishingiz kerak (bu xususiyat Expo Go'da ishlamaydi).",

@@ -10,7 +10,17 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import { database } from "../firebase/firebase";
-import type { Customer, District, Order, OrderLine, Product, Rate, Region, Tag, User } from "../interfaces";
+import type {
+  Customer,
+  District,
+  Order,
+  OrderLine,
+  Product,
+  Rate,
+  Region,
+  Tag,
+  User,
+} from "../interfaces";
 
 // firebase app instance – react-firebase-hooks uchun
 export { database, app as firebaseApp } from "../firebase/firebase";
@@ -24,7 +34,7 @@ export {
   orderBy,
   startAfter,
   startAt,
-  where
+  where,
 } from "firebase/firestore";
 
 // ─── Firestore Collection Names ───────────────────────────────────────────────
@@ -97,14 +107,14 @@ interface CollectionMethods<T> {
 // ─── DB Builder ───────────────────────────────────────────────────────────────
 
 function createCollection<T extends { id?: string }>(
-  collectionName: string
+  collectionName: string,
 ): CollectionMethods<T> {
   return {
     list: async (...constraints: QueryConstraint[]): Promise<T[]> => {
       const colRef = collection(database, collectionName);
       const q = constraints.length > 0 ? query(colRef, ...constraints) : colRef;
       const snapshot = await getDocs(q);
-      return snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as T));
+      return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as T);
     },
 
     get: async (id: string): Promise<T | null> => {
@@ -138,9 +148,13 @@ interface SubCollectionMethods<T> {
   /** Parent ID bo'yicha subcollection hujjatlarini qaytaradi */
   list: (parentId: string, ...constraints: QueryConstraint[]) => Promise<T[]>;
   /** Yangi subcollection hujjat yaratadi */
-  create: (parentId: string, data: Omit<T, 'id'>) => Promise<string>;
+  create: (parentId: string, data: Omit<T, "id">) => Promise<string>;
   /** Subcollection hujjatni yangilaydi */
-  update: (parentId: string, id: string, data: Partial<Omit<T, 'id'>>) => Promise<void>;
+  update: (
+    parentId: string,
+    id: string,
+    data: Partial<Omit<T, "id">>,
+  ) => Promise<void>;
   /** Subcollection hujjatni o'chiradi */
   delete: (parentId: string, id: string) => Promise<void>;
   /**
@@ -153,7 +167,7 @@ interface SubCollectionMethods<T> {
 
 function createSubCollection<T extends { id?: string }>(
   parentColName: string,
-  subColName: string
+  subColName: string,
 ): SubCollectionMethods<T> {
   const colRef = (parentId: string) =>
     collection(database, parentColName, parentId, subColName);
@@ -165,7 +179,7 @@ function createSubCollection<T extends { id?: string }>(
       const ref = colRef(parentId);
       const q = constraints.length > 0 ? query(ref, ...constraints) : ref;
       const snapshot = await getDocs(q);
-      return snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as T));
+      return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as T);
     },
 
     create: async (parentId, data) => {
@@ -187,23 +201,29 @@ function createSubCollection<T extends { id?: string }>(
 
 // ─── Typed DB Object ──────────────────────────────────────────────────────────
 
-const db: { [K in CollectionName]: CollectionMethods<CollectionEntityMap[K]> } = {
-  users:       createCollection<User>("users"),
-  orders:      createCollection<Order>("orders"),
-  products:    createCollection<Product>("products"),
-  regions:     createCollection<Region>("regions"),
-  districts:   createCollection<District>("districts"),   // flat fallback
-  order_lines: createCollection<OrderLine>("order_lines"), // flat fallback
-  customers:   createCollection<Customer>("customers"),
-  tags:        createCollection<Tag>("tags"),
-  rates:       createCollection<Rate>("rates"),
-};
+const db: { [K in CollectionName]: CollectionMethods<CollectionEntityMap[K]> } =
+  {
+    users: createCollection<User>("users"),
+    orders: createCollection<Order>("orders"),
+    products: createCollection<Product>("products"),
+    regions: createCollection<Region>("regions"),
+    districts: createCollection<District>("districts"), // flat fallback
+    order_lines: createCollection<OrderLine>("order_lines"), // flat fallback
+    customers: createCollection<Customer>("customers"),
+    tags: createCollection<Tag>("tags"),
+    rates: createCollection<Rate>("rates"),
+  };
 
 // ─── Subcollection instances ───────────────────────────────────────────────────
 /** regions/{regionId}/districts */
-export const subDistricts = createSubCollection<District>("regions", "districts");
+export const subDistricts = createSubCollection<District>(
+  "regions",
+  "districts",
+);
 /** orders/{orderId}/order_lines */
-export const subOrderLines = createSubCollection<OrderLine>("orders", "order_lines");
+export const subOrderLines = createSubCollection<OrderLine>(
+  "orders",
+  "order_lines",
+);
 
 export default db;
-

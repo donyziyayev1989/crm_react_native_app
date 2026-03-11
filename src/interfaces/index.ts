@@ -17,9 +17,9 @@ export interface User {
 export interface Order {
   id?: string;
   name: string;
-  date: string;         // ISO date string
+  date: string; // ISO date string
   product_count: number;
-  lost_products:number;
+  lost_products: number;
 }
 
 export interface Product {
@@ -48,27 +48,30 @@ export interface OrderLine {
   // orders/{orderId}/order_lines/{id}
   // Qulaylik uchun orderId ni ham saqlaymiz
   orderId?: string;
-  customer_id: string;  // ref → customers
-  product_id: string;   // ref → products
+  customer_id: string; // ref → customers
+  product_id: string; // ref → products
   product_count: number;
-  date: string;         // ISO date string
+  product_price: number;
+  region_name: string; // ref -> regions
+  date: string; // ISO date string
   rate: number;
   state: string;
-  user_id: string;      // ref → users
+  user_id: string; // ref → users
   delivery_price: number;
+  note?: string;
 }
 
 export interface Customer {
   id?: string;
   name: string;
-  region_name: string;    // ref → regions
+  region_name: string; // ref → regions
   district_name?: string; // denormalized field
   phone: string;
-  user_id: string;      // ref → users
-  tag_ids: string[];       // ref → tags
+  user_id: string; // ref → users
+  tag_ids: string[]; // ref → tags
   note: string;
   rates: number;
-  order_ids: string[];     // ref → orders
+  order_ids: string[]; // ref → orders
 }
 
 export interface Tag {
@@ -87,5 +90,11 @@ export interface InputProps {
   onChange: (text: string) => void;
   errors?: Record<string, any>;
   placeholder?: string;
-  multiline?:boolean
+  multiline?: boolean;
+  keyboardType?:
+    | "default"
+    | "numeric"
+    | "email-address"
+    | "phone-pad"
+    | "decimal-pad";
 }

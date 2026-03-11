@@ -1,11 +1,11 @@
 import Card from "@/components/Card";
 import CustomerForm from "@/components/CustomerForm";
 import Select from "@/components/Select";
-import { Customer, Order, OrderLine, Product } from "@/interfaces";
+import { Customer, Order, OrderLine, Product, Region } from "@/interfaces";
 import db, { subOrderLines } from "@/services/database";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { callPhone, openTelegram } from "@utils/actions";
-import { formatDate, formatMoney } from "@utils/format";
+import { formatDate, formatMoney, formatPhone } from "@utils/format";
 import { Stack, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -24,15 +24,18 @@ import {
 } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
-
+import { Rating } from "react-native-ratings";
 // ─── Order Line Form State ─────────────────────────────────────────────────────
 const emptyForm = {
   customer_id: "",
+  region_name: "",
   product_id: "",
   product_count: "",
+  product_price: "",
   rate: "",
   state: "new",
   delivery_price: "",
+  note: "",
 };
 
 const OrderDetail = () => {
@@ -44,6 +47,7 @@ const OrderDetail = () => {
   );
   const [customers, setCustomers] = useState<(Customer & { id: string })[]>([]);
   const [products, setProducts] = useState<(Product & { id: string })[]>([]);
+  const [regions, setRegions] = useState<(Region & { id: string })[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Order line qo'shish / tahrirlash modal
@@ -63,17 +67,19 @@ const OrderDetail = () => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const [orderData, linesData, customersData, productsData] =
+        const [orderData, linesData, customersData, productsData, regionsData] =
           await Promise.all([
             db.orders.get(orderId),
             subOrderLines.list(orderId),
             db.customers.list(),
             db.products.list(),
+            db.regions.list(),
           ]);
         setOrder(orderData as Order & { id: string });
         setOrderLines(linesData as (OrderLine & { id: string })[]);
         setCustomers(customersData as (Customer & { id: string })[]);
         setProducts(productsData as (Product & { id: string })[]);
+        setRegions(regionsData as (Region & { id: string })[]);
       } catch (e) {
         console.error(e);
       } finally {
@@ -93,6 +99,10 @@ const OrderDetail = () => {
     () => products.map((p) => ({ label: p.name, value: p.id! })),
     [products],
   );
+  const regionOptions = useMemo(
+    () => regions.map((r) => ({ label: r.name, value: r.id! })),
+    [regions],
+  );
 
   // ─── Save / Update order line ────────────────────────────────────────────────
   const handleSave = async () => {
@@ -104,13 +114,16 @@ const OrderDetail = () => {
     try {
       const lineData: Omit<OrderLine, "id"> = {
         customer_id: form.customer_id,
+        region_name: form.region_name || "",
         product_id: form.product_id,
         product_count: Number(form.product_count),
+        product_price: Number(form.product_price) || 0,
         rate: Number(form.rate) || 0,
         state: form.state || "new",
         delivery_price: Number(form.delivery_price) || 0,
         date: editLine?.date ?? new Date().toISOString(),
         user_id: editLine?.user_id ?? "",
+        note: form.note || "",
       };
 
       if (editLine) {
@@ -172,24 +185,34 @@ const OrderDetail = () => {
     setEditLine(line);
     setForm({
       customer_id: line.customer_id,
+      region_name: line.region_name || "",
       product_id: line.product_id,
       product_count: String(line.product_count),
+      product_price: String(line.product_price),
       rate: String(line.rate),
       state: line.state,
       delivery_price: String(line.delivery_price),
+      note: line.note || "",
     });
     setAddLineModal(true);
   };
 
   // ─── Yangi mijoz qo'shilgandan keyin avtomatik tanlash ───────────────────────
-  const handleCustomerCreated = (customerId: string, customerName: string) => {
-    // Yangi mijozni state ga qo'shamiz
-    const newCustomer = { id: customerId, name: customerName } as Customer & {
-      id: string;
-    };
+  const handleCustomerCreated = (
+    customerId: string,
+    customerData: Customer,
+  ) => {
+    // Yangi mijozni tasdiqlangan ID bilan state ga qo'shamiz
+    const newCustomer = { id: customerId, ...customerData };
     setCustomers((prev) => [...prev, newCustomer]);
-    // Avtomatik tanlanadi
-    setForm((f) => ({ ...f, customer_id: customerId }));
+
+    // Mijoz yaratilgandan so'ng, uni va uning viloyatini avtomatik tanlaymiz
+    setForm((f) => ({
+      ...f,
+      customer_id: customerId,
+      region_name: customerData.region_name || f.region_name,
+    }));
+
     // Mijoz qo'shish modalini yopamiz
     setAddCustomerModal(false);
   };
@@ -200,6 +223,19 @@ const OrderDetail = () => {
     customers.find((c) => c.id === id)?.phone ?? "";
   const getProductName = (id: string) =>
     products.find((p) => p.id === id)?.name ?? id;
+  const getRegionName = (id: string) =>
+    regions.find((r) => r.id === id)?.name ?? id;
+
+  // ─── Sorted Order Lines for Grouping ─────────────────────────────────────────
+  const sortedOrderLines = useMemo(() => {
+    return [...orderLines].sort((a, b) => {
+      const rA = getRegionName(a.region_name || "");
+      const rB = getRegionName(b.region_name || "");
+      if (rA < rB) return -1;
+      if (rA > rB) return 1;
+      return 0;
+    });
+  }, [orderLines, regions]);
 
   // ─── Swipeable row refs (must be before any early return) ────────────────────
   const rowRefs = useRef(new Map<string, any>());
@@ -259,7 +295,7 @@ const OrderDetail = () => {
       <Stack.Screen options={{ title: order?.name ?? "Buyurtma tafsiloti" }} />
       <GestureHandlerRootView style={{ flex: 1 }}>
         <FlatList
-          data={orderLines}
+          data={sortedOrderLines}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
           ListEmptyComponent={() => (
@@ -270,118 +306,175 @@ const OrderDetail = () => {
               </Text>
             </View>
           )}
-          renderItem={({ item, index }) => (
-            <View className="mb-2 bg-white rounded-2xl">
-              <ReanimatedSwipeable
-                ref={
-                  ((ref: any) => {
-                    if (item.id) {
-                      if (ref) rowRefs.current.set(item.id, ref);
-                      else rowRefs.current.delete(item.id);
-                    }
-                  }) as any
-                }
-                onSwipeableWillOpen={() => item.id && closeRow(item.id)}
-                renderRightActions={() => renderRightPanel(item)}
-              >
-                <Card>
-                  <View className="flex-row justify-between items-center mb-2">
-                    <View style={styles.infoItem}>
-                      <MaterialIcons name="person" size={16} color="#6b7280" />
-                      <View className="flex flex-row gap-2">
-                        <Text style={styles.infoText}>
-                          {getCustomerName(item.customer_id)}
-                        </Text>
-                        <Text style={styles.phoneText}>
-                          ({getCustomerPhone(item.customer_id)})
-                        </Text>
-                      </View>
-                    </View>
-                    <Text
-                      style={[
-                        styles.stateBadge,
-                        item.state === "done"
-                          ? styles.stateDone
-                          : item.state === "cancel"
-                            ? styles.stateCancel
-                            : item.state === "reschedule"
-                              ? styles.stateReschedule
-                              : styles.stateNew,
-                      ]}
-                    >
-                      {item.state === "done"
-                        ? "Bajarildi"
-                        : item.state === "cancel"
-                          ? "Bekor"
-                          : item.state === "reschedule"
-                            ? "Boshqa partiyaga"
-                            : "Yangi"}
+          renderItem={({ item, index }) => {
+            const regionName = getRegionName(item.region_name || "");
+            const showHeader =
+              index === 0 ||
+              getRegionName(sortedOrderLines[index - 1].region_name || "") !==
+                regionName;
+
+            return (
+              <View>
+                {showHeader && (
+                  <View className="mt-2 mb-3 flex-row items-center justify-between">
+                    <Text className="uppercase font-semibold ">
+                      {regionName || "Viloyat aniqlanmagan"}
+                    </Text>
+                    <Text>
+                      {sortedOrderLines
+                        .filter(
+                          (li) =>
+                            getRegionName(li.region_name || "") === regionName,
+                        )
+                        .reduce(
+                          (acc, curr) => acc + curr.product_count,
+                          0,
+                        )}{" "}
+                      <Text className="text-muted text-xs">dona mahsulot</Text>
                     </Text>
                   </View>
-                  <View className="flex-row gap-2 items-center justify-between mb-1">
-                    <View style={styles.infoItem}>
-                      <MaterialIcons
-                        name="shopping-bag"
-                        size={16}
-                        color="#6b7280"
-                      />
-                      <Text style={styles.infoText}>
-                        {getProductName(item.product_id)}
-                      </Text>
-                    </View>
-                    <View className="flex-row items-center gap-2 ">
-                      <MaterialIcons
-                        name="grid-view"
-                        size={16}
-                        color="#6b7280"
-                      />
-                      <Text style={styles.infoText}>
-                        Soni:{" "}
-                        <Text style={styles.bold}>{item.product_count}</Text>
-                      </Text>
-                    </View>
-                  </View>
-                  <View className="flex-row gap-3">
-                    <View className="flex-row items-center gap-1">
-                      <MaterialIcons
-                        name="attach-money"
-                        size={16}
-                        color="#6b7280"
-                      />
-                      <Text style={styles.bold}>
-                        Narxi: {formatMoney(item.rate)}
-                      </Text>
-                    </View>
-                    <View className="flex-row items-center gap-1">
-                      <MaterialIcons
-                        name="local-shipping"
-                        size={16}
-                        color="#6b7280"
-                      />
-                      <Text style={styles.bold}>
-                        Dostavka: {formatMoney(item.delivery_price)}
-                      </Text>
-                    </View>
-                  </View>
-                  <View
-                    className="flex-row gap-2 items-center justify-between mt-1 pt-1"
-                    style={styles.borderTop}
+                )}
+                <View className="mb-2 bg-white rounded-2xl">
+                  <ReanimatedSwipeable
+                    ref={
+                      ((ref: any) => {
+                        if (item.id) {
+                          if (ref) rowRefs.current.set(item.id, ref);
+                          else rowRefs.current.delete(item.id);
+                        }
+                      }) as any
+                    }
+                    onSwipeableWillOpen={() => item.id && closeRow(item.id)}
+                    renderRightActions={() => renderRightPanel(item)}
                   >
-                    <Text>Ma'sul: Doniyor</Text>
+                    <Card>
+                      <View className="flex-row justify-between items-center mb-2">
+                        <View style={styles.infoItem}>
+                          <MaterialIcons
+                            name="person"
+                            size={16}
+                            color="#6b7280"
+                          />
+                          <View className="flex flex-row gap-2">
+                            <Text style={styles.infoText}>
+                              {getCustomerName(item.customer_id)}
+                            </Text>
+                            <Text style={styles.phoneText}>
+                              ({formatPhone(getCustomerPhone(item.customer_id))}
+                              )
+                            </Text>
+                          </View>
+                        </View>
+                        <Text
+                          style={[
+                            styles.stateBadge,
+                            item.state === "done"
+                              ? styles.stateDone
+                              : item.state === "cancel"
+                                ? styles.stateCancel
+                                : item.state === "reschedule"
+                                  ? styles.stateReschedule
+                                  : styles.stateNew,
+                          ]}
+                        >
+                          {item.state === "done"
+                            ? "Bajarildi"
+                            : item.state === "cancel"
+                              ? "Bekor"
+                              : item.state === "reschedule"
+                                ? "Boshqa partiyaga"
+                                : "Yangi"}
+                        </Text>
+                      </View>
+                      <View className="flex-row items-center justify-between mb-1">
+                        <View style={styles.infoItem}>
+                          <MaterialIcons
+                            name="shopping-bag"
+                            size={16}
+                            color="#6b7280"
+                          />
+                          <Text style={styles.infoText}>
+                            {getProductName(item.product_id)}
+                          </Text>
+                        </View>
+                      </View>
+                      <View className="flex-row gap-2">
+                        <View className="flex-row items-center">
+                          <MaterialIcons
+                            name="attach-money"
+                            size={16}
+                            color="#6b7280"
+                            className="mr-1"
+                          />
+                          <Text className="font-semibold">
+                            {formatMoney(item.product_price)}
+                          </Text>
+                          <Text className="text-muted"> so'm</Text>
+                        </View>
+                        <View className="flex-row items-center">
+                          <Text className="text-black">
+                            x {item.product_count}
+                          </Text>
+                          <Text className="text-muted"> dona = </Text>
+                          <Text className="font-semibold">
+                            {formatMoney(
+                              item.product_price * item.product_count,
+                            )}{" "}
+                            so'm
+                          </Text>
+                        </View>
+                      </View>
+                      <View className="flex-row items-center">
+                        <MaterialIcons
+                          name="local-shipping"
+                          size={16}
+                          color="#6b7280"
+                          className="mr-1"
+                        />
+                        <Text className="font-semibold">
+                          {formatMoney(item.delivery_price)}
+                        </Text>
+                        <Text className="text-muted"> so'm</Text>
+                        <Text className="text-black">
+                          {" "}
+                          x {item.product_count}
+                        </Text>
+                        <Text className="text-muted"> dona = </Text>
+                        <Text className="font-semibold">
+                          {formatMoney(
+                            item.delivery_price * item.product_count,
+                          )}{" "}
+                          so'm
+                        </Text>
+                      </View>
+                      <View
+                        className="flex-row gap-2 items-center justify-between mt-2 pt-2"
+                        style={styles.borderTop}
+                      >
+                        <View className="flex-1">
+                          <Text>Ma'sul: Doniyor</Text>
+                          {!!item.note && (
+                            <Text className="text-gray-500 text-sm mt-1">
+                              Izoh: {item.note}
+                            </Text>
+                          )}
+                        </View>
 
-                    <View className="flex-row items-center gap-1">
-                      <MaterialIcons
-                        name="event-available"
-                        size={16}
-                        color="#6b7280"
-                      />
-                      <Text>{formatDate(item.date)}</Text>
-                    </View>
-                  </View>
-                </Card>
-              </ReanimatedSwipeable>
-            </View>
-          )}
+                        <View className="flex-row items-center gap-1">
+                          <MaterialIcons
+                            name="event-available"
+                            size={16}
+                            color="#6b7280"
+                          />
+                          <Text>{formatDate(item.date)}</Text>
+                        </View>
+                      </View>
+                    </Card>
+                  </ReanimatedSwipeable>
+                </View>
+              </View>
+            );
+          }}
           ListFooterComponent={() => (
             <Pressable
               style={styles.addBtn}
@@ -435,7 +528,14 @@ const OrderDetail = () => {
                     search
                     maxHeight={280}
                     value={form.customer_id || null}
-                    onChange={(v) => setForm((f) => ({ ...f, customer_id: v }))}
+                    onChange={(v) => {
+                      const cust = customers.find((c) => c.id === v);
+                      setForm((f) => ({
+                        ...f,
+                        customer_id: v,
+                        region_name: cust?.region_name || f.region_name,
+                      }));
+                    }}
                   />
                 </View>
                 <Pressable
@@ -446,6 +546,18 @@ const OrderDetail = () => {
                 </Pressable>
               </View>
 
+              {/* ── Viloyat ── */}
+              <Text style={styles.fieldLabel}>Viloyat</Text>
+              <Select
+                data={regionOptions}
+                placeholder="Viloyatni tanlang"
+                searchPlaceholder="Qidirish..."
+                search={true}
+                maxHeight={280}
+                value={form.region_name || null}
+                onChange={(v) => setForm((f) => ({ ...f, region_name: v }))}
+              />
+
               {/* ── Mahsulot ── */}
               <Text style={styles.fieldLabel}>Mahsulot</Text>
               <Select
@@ -455,7 +567,28 @@ const OrderDetail = () => {
                 search={false}
                 maxHeight={280}
                 value={form.product_id}
-                onChange={(v) => setForm((f) => ({ ...f, product_id: v }))}
+                onChange={(v) => {
+                  const selectedProduct = products.find((p) => p.id === v);
+                  setForm((f) => ({
+                    ...f,
+                    product_id: v,
+                    product_price: selectedProduct
+                      ? String(selectedProduct.price)
+                      : f.product_price,
+                  }));
+                }}
+              />
+
+              {/* ── Mahsulot narxi ── */}
+              <Text style={styles.fieldLabel}>Mahsulot narxi</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="0"
+                keyboardType="numeric"
+                value={form.product_price}
+                onChangeText={(v) =>
+                  setForm((f) => ({ ...f, product_price: v }))
+                }
               />
 
               {/* ── Miqdor ── */}
@@ -469,17 +602,6 @@ const OrderDetail = () => {
                   setForm((f) => ({ ...f, product_count: v }))
                 }
               />
-
-              {/* ── Narx ── */}
-              <Text style={styles.fieldLabel}>Narx</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="0"
-                keyboardType="numeric"
-                value={form.rate}
-                onChangeText={(v) => setForm((f) => ({ ...f, rate: v }))}
-              />
-
               {/* ── Yetkazish narxi ── */}
               <Text style={styles.fieldLabel}>Yetkazish narxi</Text>
               <TextInput
@@ -490,6 +612,35 @@ const OrderDetail = () => {
                 onChangeText={(v) =>
                   setForm((f) => ({ ...f, delivery_price: v }))
                 }
+              />
+
+              {/* ── (Reyting) ── */}
+              <Text style={[styles.fieldLabel, { marginBottom: 15 }]}>
+                Reyting
+              </Text>
+              <Rating
+                type="star"
+                ratingCount={10}
+                imageSize={32}
+                showRating={false}
+                ratingBackgroundColor="red"
+                startingValue={Number(form.rate) || 0}
+                style={{
+                  marginRight: "auto",
+                }}
+                onFinishRating={(v: number) =>
+                  setForm((f) => ({ ...f, rate: String(v) }))
+                }
+              />
+
+              {/* ── Izoh ── */}
+              <Text style={styles.fieldLabel}>Izoh</Text>
+              <TextInput
+                style={[styles.input, { minHeight: 80 }]}
+                placeholder="Izoh yozing..."
+                multiline
+                value={form.note}
+                onChangeText={(v) => setForm((f) => ({ ...f, note: v }))}
               />
 
               {/* ── Holat ── */}
@@ -574,6 +725,7 @@ const OrderDetail = () => {
             <CustomerForm
               onSuccess={handleCustomerCreated}
               onCancel={() => setAddCustomerModal(false)}
+              hideOrders={true}
             />
           </View>
         </KeyboardAvoidingView>
@@ -704,9 +856,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#e5e7eb",
     alignItems: "center",
+    justifyContent: "center",
   },
   stateBtnActive: { backgroundColor: "#6366f1", borderColor: "#6366f1" },
-  stateBtnText: { fontSize: 13, color: "#374151" },
+  stateBtnText: {
+    fontSize: 13,
+    color: "#374151",
+  },
   stateBtnTextActive: { color: "#fff", fontWeight: "600" },
   saveBtn: {
     backgroundColor: "#6366f1",

@@ -25,15 +25,17 @@ import {
 } from "react-native";
 
 interface CustomerFormProps {
-  onSuccess?: (customerId: string, customerName: string) => void;
+  onSuccess?: (customerId: string, customerData: Customer) => void;
   onCancel?: () => void;
   initialData?: Customer & { id?: string };
+  hideOrders?: boolean;
 }
 
 const CustomerForm = ({
   onSuccess,
   onCancel,
   initialData,
+  hideOrders,
 }: CustomerFormProps) => {
   const [selectedRegionId, setSelectedRegionId] = useState<string | null>(
     initialData?.region_name || null,
@@ -125,14 +127,14 @@ const CustomerForm = ({
       if (initialData?.id) {
         await db.customers.update(initialData.id, cleanedData);
         if (onSuccess) {
-          onSuccess(initialData.id, data.name);
+          onSuccess(initialData.id, cleanedData);
         } else {
           Alert.alert("Mijoz yangilandi");
         }
       } else {
         const newId = await db.customers.create(cleanedData);
         if (onSuccess) {
-          onSuccess(newId, data.name);
+          onSuccess(newId, cleanedData);
         } else {
           Alert.alert("Mijoz yaratildi");
         }
@@ -259,28 +261,30 @@ const CustomerForm = ({
         </View>
 
         {/* Orders */}
-        <View style={styles.fieldGroup}>
-          <Text style={styles.label}>Buyurtmalar</Text>
-          <Controller
-            control={control}
-            name="order_ids"
-            render={({ field: { onChange, value } }) => (
-              <Select
-                name="order_ids"
-                data={orders}
-                errors={errors}
-                placeholder="Buyurtmalar"
-                searchPlaceholder="Qidirish..."
-                maxHeight={300}
-                value={value}
-                multiSelect={true}
-                onChange={(val) => {
-                  onChange(val);
-                }}
-              />
-            )}
-          />
-        </View>
+        {!hideOrders && (
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Buyurtmalar</Text>
+            <Controller
+              control={control}
+              name="order_ids"
+              render={({ field: { onChange, value } }) => (
+                <Select
+                  name="order_ids"
+                  data={orders}
+                  errors={errors}
+                  placeholder="Buyurtmalar"
+                  searchPlaceholder="Qidirish..."
+                  maxHeight={300}
+                  value={value}
+                  multiSelect={true}
+                  onChange={(val) => {
+                    onChange(val);
+                  }}
+                />
+              )}
+            />
+          </View>
+        )}
 
         {/* Tags */}
         <View style={styles.fieldGroup}>
@@ -313,7 +317,6 @@ const CustomerForm = ({
             control={control}
             name="rates"
             rules={{
-              required: "Reyting kiritilishi shart",
               min: { value: 0, message: "Minimal 0" },
             }}
             render={({ field: { onChange, value } }) => (
