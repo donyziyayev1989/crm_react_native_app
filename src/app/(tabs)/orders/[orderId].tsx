@@ -1,11 +1,11 @@
-import Card from "@/components/Card";
 import LostProductModal from "@/components/LostProductModal";
+import OrderLineCard from "@/components/OrderLineCard";
 import OrderLineModal from "@/components/OrderLineModal";
 import { Customer, Order, OrderLine, Product, Region } from "@/interfaces";
 import db, { subOrderLines } from "@/services/database";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { callPhone, openTelegram } from "@utils/actions";
-import { formatDate, formatMoney, formatPhone } from "@utils/format";
+import { formatPhone } from "@utils/format";
 import { Stack, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -255,129 +255,12 @@ const OrderDetail = () => {
                     onSwipeableWillOpen={() => item.id && closeRow(item.id)}
                     renderRightActions={() => renderRightPanel(item)}
                   >
-                    <Card>
-                      <View className="flex-row justify-between items-center mb-2">
-                        <View style={styles.infoItem}>
-                          <MaterialIcons
-                            name="person"
-                            size={16}
-                            color="#6b7280"
-                          />
-                          <View className="flex flex-row gap-2">
-                            <Text style={styles.infoText}>
-                              {getCustomerName(item.customer_id)}
-                            </Text>
-                            <Text style={styles.phoneText}>
-                              ({formatPhone(getCustomerPhone(item.customer_id))}
-                              )
-                            </Text>
-                          </View>
-                        </View>
-                        <Text
-                          style={[
-                            styles.stateBadge,
-                            item.state === "done"
-                              ? styles.stateDone
-                              : item.state === "cancel"
-                                ? styles.stateCancel
-                                : item.state === "reschedule"
-                                  ? styles.stateReschedule
-                                  : styles.stateNew,
-                          ]}
-                        >
-                          {item.state === "done"
-                            ? "Bajarildi"
-                            : item.state === "cancel"
-                              ? "Bekor"
-                              : item.state === "reschedule"
-                                ? "Boshqa partiyaga"
-                                : "Yangi"}
-                        </Text>
-                      </View>
-                      <View className="flex-row items-center justify-between mb-1">
-                        <View style={styles.infoItem}>
-                          <MaterialIcons
-                            name="shopping-bag"
-                            size={16}
-                            color="#6b7280"
-                          />
-                          <Text style={styles.infoText}>
-                            {getProductName(item.product_id)}
-                          </Text>
-                        </View>
-                      </View>
-                      <View className="flex-row gap-2">
-                        <View className="flex-row items-center">
-                          <MaterialIcons
-                            name="attach-money"
-                            size={16}
-                            color="#6b7280"
-                            className="mr-1"
-                          />
-                          <Text className="font-semibold">
-                            {formatMoney(item.product_price)}
-                          </Text>
-                          <Text className="text-muted"> so'm</Text>
-                        </View>
-                        <View className="flex-row items-center">
-                          <Text className="text-black">
-                            x {item.product_count}
-                          </Text>
-                          <Text className="text-muted"> dona = </Text>
-                          <Text className="font-semibold">
-                            {formatMoney(
-                              item.product_price * item.product_count,
-                            )}{" "}
-                            so'm
-                          </Text>
-                        </View>
-                      </View>
-                      <View className="flex-row items-center">
-                        <MaterialIcons
-                          name="local-shipping"
-                          size={16}
-                          color="#6b7280"
-                          className="mr-1"
-                        />
-                        <Text className="font-semibold">
-                          {formatMoney(item.delivery_price)}
-                        </Text>
-                        <Text className="text-muted"> so'm</Text>
-                        <Text className="text-black">
-                          {" "}
-                          x {item.product_count}
-                        </Text>
-                        <Text className="text-muted"> dona = </Text>
-                        <Text className="font-semibold">
-                          {formatMoney(
-                            item.delivery_price * item.product_count,
-                          )}{" "}
-                          so'm
-                        </Text>
-                      </View>
-                      <View
-                        className="flex-row gap-2 items-center justify-between mt-2 pt-2"
-                        style={styles.borderTop}
-                      >
-                        <View className="flex-1">
-                          <Text>Ma'sul: Doniyor</Text>
-                          {!!item.note && (
-                            <Text className="text-gray-500 text-sm mt-1">
-                              Izoh: {item.note}
-                            </Text>
-                          )}
-                        </View>
-
-                        <View className="flex-row items-center gap-1">
-                          <MaterialIcons
-                            name="event-available"
-                            size={16}
-                            color="#6b7280"
-                          />
-                          <Text>{formatDate(item.date)}</Text>
-                        </View>
-                      </View>
-                    </Card>
+                    <OrderLineCard
+                      item={item}
+                      title={getCustomerName(item.customer_id)}
+                      subtitle={formatPhone(getCustomerPhone(item.customer_id))}
+                      productName={getProductName(item.product_id)}
+                    />
                   </ReanimatedSwipeable>
                 </View>
               </View>

@@ -1,9 +1,9 @@
 import Card from "@/components/Card";
+import OrderLineCard from "@/components/OrderLineCard";
 import OrderLineModal from "@/components/OrderLineModal";
 import db, { database } from "@/services/database";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Customer, OrderLine } from "@interfaces/index";
-import { formatDate, formatMoney } from "@utils/format";
 import { router, Stack, useLocalSearchParams } from "expo-router";
 import { collectionGroup, getDocs, query, where } from "firebase/firestore";
 import { useEffect, useState } from "react";
@@ -176,61 +176,14 @@ const CustomerDetail = () => {
           ) : (
             orderLines.map((line) => (
               <View key={line.id} style={styles.lineCard}>
-                <Card>
-                  <View style={styles.lineHeader}>
-                    <Text style={styles.orderName}>
-                      {ordersMap[line.orderId] || "Noma'lum buyurtma"}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.stateBadge,
-                        line.state === "done"
-                          ? styles.stateDone
-                          : line.state === "cancel"
-                            ? styles.stateCancel
-                            : line.state === "reschedule"
-                              ? styles.stateReschedule
-                              : styles.stateNew,
-                      ]}
-                    >
-                      {line.state === "done"
-                        ? "Bajarildi"
-                        : line.state === "cancel"
-                          ? "Bekor"
-                          : line.state === "reschedule"
-                            ? "Boshqa partiyaga"
-                            : "Yangi"}
-                    </Text>
-                  </View>
-
-                  <View style={styles.lineInfo}>
-                    <MaterialIcons
-                      name="shopping-bag"
-                      size={16}
-                      color="#6b7280"
-                    />
-                    <Text style={styles.infoText}>
-                      {productsMap[line.product_id]?.name ||
-                        "Noma'lum mahsulot"}
-                    </Text>
-                    {/* product price */}
-                    <Text style={styles.infoText} className="ms-2">
-                      {formatMoney(line.product_price)}
-                    </Text>
-                    <Text style={styles.infoText}> x {line.product_count}</Text>
-                  </View>
-
-                  <View style={styles.lineFooter}>
-                    <View style={styles.priceInfo}>
-                      <Text style={styles.priceText}>
-                        Summa: {formatMoney(line.rate * line.product_count)}
-                      </Text>
-                      <Text style={styles.dateText}>
-                        {formatDate(line.date)}
-                      </Text>
-                    </View>
-                  </View>
-                </Card>
+                <OrderLineCard
+                  item={line}
+                  title={ordersMap[line.orderId] || "Noma'lum buyurtma"}
+                  topIconName="assignment"
+                  productName={
+                    productsMap[line.product_id]?.name || "Noma'lum mahsulot"
+                  }
+                />
               </View>
             ))
           )}
