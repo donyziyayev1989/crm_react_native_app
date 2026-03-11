@@ -1,0 +1,506 @@
+import { Customer, Order, OrderLine, Product, Region } from "@/interfaces";
+import db, { orderBy, subOrderLines } from "@/services/database";
+import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import { Rating } from "react-native-ratings";
+import CustomModal from "./CustomModal";
+import CustomerForm from "./CustomerForm";
+import Select from "./Select";
+
+// Order Line Form State
+const emptyForm = {
+  order_id: "",
+  customer_id: "",
+  region_name: "",
+  product_id: "",
+  product_count: "",
+  product_price: "",
+  rate: "",
+  state: "new",
+  delivery_price: "",
+  note: "",
+};
+
+interface OrderLineModalProps {
+  visible: boolean;
+  onClose: () => void;
+  orderId?: string;
+  editLine?: (OrderLine & { id: string }) | null;
+  onSuccess?: (line: OrderLine & { id: string }, isEdit: boolean) => void;
+  onCustomerAdded?: (customer: Customer & { id: string }) => void;
+  initialCustomer?: (Customer & { id: string }) | null;
+}
+
+const OrderLineModal: React.FC<OrderLineModalProps> = ({
+  visible,
+  onClose,
+  orderId,
+  editLine,
+  onSuccess,
+  onCustomerAdded,
+  initialCustomer,
+}) => {
+  const [form, setForm] = useState(emptyForm);
+  const [saving, setSaving] = useState(false);
+  const [addCustomerModal, setAddCustomerModal] = useState(false);
+
+  const [customers, setCustomers] = useState<(Customer & { id: string })[]>([]);
+  const [products, setProducts] = useState<(Product & { id: string })[]>([]);
+  const [regions, setRegions] = useState<(Region & { id: string })[]>([]);
+  const [orders, setOrders] = useState<(Order & { id: string })[]>([]);
+
+  useEffect(() => {
+    if (visible) {
+      // Fetch customers, products, regions, orders if visible
+      const fetchData = async () => {
+        try {
+          const [customersData, productsData, regionsData, ordersData] =
+            await Promise.all([
+              db.customers.list(),
+              db.products.list(),
+              db.regions.list(),
+              db.orders.list(orderBy("date", "desc")),
+            ]);
+          setCustomers(customersData as (Customer & { id: string })[]);
+          setProducts(productsData as (Product & { id: string })[]);
+          setRegions(regionsData as (Region & { id: string })[]);
+          setOrders(ordersData as (Order & { id: string })[]);
+        } catch (e) {
+          console.error(e);
+        }
+      };
+      fetchData();
+    }
+  }, [visible]);
+
+  useEffect(() => {
+    if (editLine && visible) {
+      setForm({
+        order_id: "",
+        customer_id: editLine.customer_id,
+        region_name: editLine.region_name || "",
+        product_id: editLine.product_id,
+        product_count: String(editLine.product_count),
+        product_price: String(editLine.product_price),
+        rate: String(editLine.rate),
+        state: editLine.state,
+        delivery_price: String(editLine.delivery_price),
+        note: editLine.note || "",
+      });
+    } else if (visible) {
+      setForm({
+        ...emptyForm,
+        customer_id: initialCustomer?.id || "",
+        region_name: initialCustomer?.region_name || "",
+      });
+    }
+  }, [editLine, visible, initialCustomer]);
+
+  const customerOptions = useMemo(
+    () =>
+      customers.map((c) => ({ label: `${c.name} (${c.phone})`, value: c.id! })),
+    [customers],
+  );
+  const productOptions = useMemo(
+    () => products.map((p) => ({ label: p.name, value: p.id! })),
+    [products],
+  );
+  const regionOptions = useMemo(
+    () => regions.map((r) => ({ label: r.name, value: r.id! })),
+    [regions],
+  );
+  const orderOptions = useMemo(
+    () => orders.map((o) => ({ label: o.name, value: o.id! })),
+    [orders],
+  );
+
+  const handleSave = async () => {
+    const targetOrderId = orderId || form.order_id;
+    if (!targetOrderId) {
+      Alert.alert("Xato", "Partiya (Order) tanlanishi shart");
+      return;
+    }
+    if (!form.customer_id || !form.product_id || !form.product_count) {
+      Alert.alert("Xato", "Mijoz, mahsulot va miqdor to'ldirilishi shart");
+      return;
+    }
+    setSaving(true);
+    try {
+      const lineData: Omit<OrderLine, "id"> = {
+        customer_id: form.customer_id,
+        region_name: form.region_name || "",
+        product_id: form.product_id,
+        product_count: Number(form.product_count),
+        product_price: Number(form.product_price) || 0,
+        rate: Number(form.rate) || 0,
+        state: form.state || "new",
+        delivery_price: Number(form.delivery_price) || 0,
+        date: editLine?.date ?? new Date().toISOString(),
+        user_id: editLine?.user_id ?? "",
+        note: form.note || "",
+      };
+
+      let returnedId = "";
+      if (editLine) {
+        await subOrderLines.update(targetOrderId, editLine.id, lineData);
+        returnedId = editLine.id;
+      } else {
+        const newId = await subOrderLines.create(targetOrderId, lineData);
+        returnedId = newId;
+      }
+
+      setForm(emptyForm);
+      if (onSuccess) {
+        onSuccess(
+          { id: returnedId, orderId: targetOrderId, ...lineData } as any,
+          !!editLine,
+        );
+      }
+      onClose();
+    } catch (e) {
+      Alert.alert("Xato", "Saqlashda xatolik yuz berdi");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleClose = () => {
+    setForm(emptyForm);
+    onClose();
+  };
+
+  const handleCustomerCreated = (
+    customerId: string,
+    customerData: Customer,
+  ) => {
+    const newCustomer = { id: customerId, ...customerData };
+    setCustomers((prev) => [...prev, newCustomer]);
+    setForm((f) => ({
+      ...f,
+      customer_id: customerId,
+      region_name: customerData.region_name || f.region_name,
+    }));
+    setAddCustomerModal(false);
+    if (onCustomerAdded) {
+      onCustomerAdded(newCustomer);
+    }
+  };
+
+  return (
+    <>
+      <CustomModal
+        visible={visible}
+        onClose={handleClose}
+        contentContainerStyle={{ justifyContent: "flex-end" }}
+        modalTitle={editLine ? "Buyurtmani tahrirlash" : "Yangi buyurtma"}
+      >
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* ── Yoki partiyani tanlash (agar orderId kelmasa) ── */}
+          {!orderId && (
+            <>
+              <Text style={styles.fieldLabel}>Partiya (Buyurtma)</Text>
+              <Select
+                data={orderOptions}
+                placeholder="Partiyani tanlang"
+                searchPlaceholder="Qidirish..."
+                search={true}
+                maxHeight={280}
+                value={form.order_id || null}
+                onChange={(v) => setForm((f) => ({ ...f, order_id: v }))}
+              />
+            </>
+          )}
+
+          {/* ── Mijoz va Viloyat (agar initialCustomer berilmasa ko'rinadi) ── */}
+          {!initialCustomer && (
+            <>
+              <Text style={styles.fieldLabel}>Mijoz</Text>
+              <View style={styles.selectRow}>
+                <View style={{ flex: 1 }}>
+                  <Select
+                    data={customerOptions}
+                    placeholder="Mijozni tanlang"
+                    searchPlaceholder="Qidirish..."
+                    search
+                    maxHeight={280}
+                    value={form.customer_id || null}
+                    onChange={(v) => {
+                      const cust = customers.find((c) => c.id === v);
+                      setForm((f) => ({
+                        ...f,
+                        customer_id: v,
+                        region_name: cust?.region_name || f.region_name,
+                      }));
+                    }}
+                  />
+                </View>
+                <Pressable
+                  style={styles.addCustomerBtn}
+                  onPress={() => setAddCustomerModal(true)}
+                >
+                  <MaterialIcons name="person-add" size={20} color="#fff" />
+                </Pressable>
+              </View>
+
+              <Text style={styles.fieldLabel}>Viloyat</Text>
+              <Select
+                data={regionOptions}
+                placeholder="Viloyatni tanlang"
+                searchPlaceholder="Qidirish..."
+                search={false}
+                maxHeight={280}
+                value={form.region_name || null}
+                onChange={(v) => setForm((f) => ({ ...f, region_name: v }))}
+              />
+            </>
+          )}
+
+          {/* ── Mahsulot ── */}
+          <Text style={styles.fieldLabel}>Mahsulot</Text>
+          <Select
+            data={productOptions}
+            placeholder="Mahsulotni tanlang"
+            searchPlaceholder="Qidirish..."
+            search={false}
+            maxHeight={280}
+            value={form.product_id}
+            onChange={(v) => {
+              const selectedProduct = products.find((p) => p.id === v);
+              setForm((f) => ({
+                ...f,
+                product_id: v,
+                product_price: selectedProduct
+                  ? String(selectedProduct.price)
+                  : f.product_price,
+              }));
+            }}
+          />
+
+          {/* ── Mahsulot narxi ── */}
+          <Text style={styles.fieldLabel}>Mahsulot narxi</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="0"
+            keyboardType="numeric"
+            value={form.product_price}
+            onChangeText={(v) => setForm((f) => ({ ...f, product_price: v }))}
+          />
+
+          {/* ── Miqdor ── */}
+          <Text style={styles.fieldLabel}>Miqdor</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="0"
+            keyboardType="numeric"
+            value={form.product_count}
+            onChangeText={(v) => setForm((f) => ({ ...f, product_count: v }))}
+          />
+          {/* ── Yetkazish narxi ── */}
+          <Text style={styles.fieldLabel}>Yetkazish narxi</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="0"
+            keyboardType="numeric"
+            value={form.delivery_price}
+            onChangeText={(v) => setForm((f) => ({ ...f, delivery_price: v }))}
+          />
+
+          {/* ── (Reyting) ── */}
+          <Text style={[styles.fieldLabel, { marginBottom: 15 }]}>Reyting</Text>
+          <Rating
+            type="star"
+            ratingCount={10}
+            imageSize={32}
+            showRating={false}
+            ratingBackgroundColor="red"
+            startingValue={Number(form.rate) || 0}
+            style={{
+              marginRight: "auto",
+            }}
+            onFinishRating={(v: number) =>
+              setForm((f) => ({ ...f, rate: String(v) }))
+            }
+          />
+
+          {/* ── Izoh ── */}
+          <Text style={styles.fieldLabel}>Izoh</Text>
+          <TextInput
+            style={[styles.input, { minHeight: 80 }]}
+            placeholder="Izoh yozing..."
+            multiline
+            value={form.note}
+            onChangeText={(v) => setForm((f) => ({ ...f, note: v }))}
+          />
+
+          {/* ── Holat ── */}
+          <Text style={styles.fieldLabel}>Holat</Text>
+          <View style={styles.stateRow}>
+            {(["new", "done", "cancel", "reschedule"] as const).map((s) => (
+              <Pressable
+                key={s}
+                onPress={() => setForm((f) => ({ ...f, state: s }))}
+                style={[
+                  styles.stateBtn,
+                  form.state === s && styles.stateBtnActive,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.stateBtnText,
+                    form.state === s && styles.stateBtnTextActive,
+                  ]}
+                >
+                  {s === "new"
+                    ? "Yangi"
+                    : s === "done"
+                      ? "Bajarildi"
+                      : s === "cancel"
+                        ? "Bekor"
+                        : s === "reschedule"
+                          ? "Boshqa partiyaga"
+                          : ""}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <View className="flex flex-row flex-1 gap-2 mt-3">
+            <Pressable
+              style={[styles.discardBtn]}
+              onPress={handleClose}
+              disabled={saving}
+            >
+              {saving ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.discardBtnText}>Bekor qilish</Text>
+              )}
+            </Pressable>
+
+            <Pressable
+              style={[styles.saveBtn, saving && { opacity: 0.6 }]}
+              onPress={handleSave}
+              disabled={saving}
+            >
+              {saving ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.saveBtnText}>Saqlash</Text>
+              )}
+            </Pressable>
+          </View>
+        </ScrollView>
+      </CustomModal>
+
+      {/* Customer Modal inside the Order Line Modal */}
+      {!initialCustomer && (
+        <CustomModal
+          visible={addCustomerModal}
+          onClose={() => setAddCustomerModal(false)}
+          showBackdrop={false}
+          showHandle={false}
+          sheetStyle={styles.fullSheet}
+          modalTitle="Yangi mijoz qo'shish"
+        >
+          <CustomerForm
+            onSuccess={handleCustomerCreated}
+            onCancel={() => setAddCustomerModal(false)}
+            hideOrders={true}
+          />
+        </CustomModal>
+      )}
+    </>
+  );
+};
+
+export default OrderLineModal;
+
+const styles = StyleSheet.create({
+  selectRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  addCustomerBtn: {
+    backgroundColor: "#6366f1",
+    borderRadius: 10,
+    width: 46,
+    height: 46,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  fieldLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#6b7280",
+    textTransform: "uppercase",
+    marginBottom: 4,
+    marginTop: 12,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: "#111827",
+    backgroundColor: "#fff",
+  },
+  stateRow: { flexDirection: "row", gap: 8, marginTop: 4 },
+  stateBtn: {
+    flex: 1,
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stateBtnActive: { backgroundColor: "#6366f1", borderColor: "#6366f1" },
+  stateBtnText: {
+    fontSize: 13,
+    color: "#374151",
+  },
+  stateBtnTextActive: { color: "#fff", fontWeight: "600" },
+  saveBtn: {
+    backgroundColor: "#6366f1",
+    borderRadius: 12,
+    padding: 14,
+    alignItems: "center",
+    flexGrow: 1,
+  },
+  discardBtn: {
+    backgroundColor: "#f5f5f5",
+    borderRadius: 12,
+    padding: 14,
+    alignItems: "center",
+    flexGrow: 1,
+  },
+  saveBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  discardBtnText: { color: "#777", fontSize: 16, fontWeight: "700" },
+  fullSheet: {
+    flex: 1,
+    backgroundColor: "#fff",
+    marginTop: 60,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
+  fullSheetHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f3f4f6",
+  },
+});

@@ -73,7 +73,7 @@ export interface Customer {
   name: string;
   region_name: string; // ref → regions
   district_name?: string; // denormalized field
-  phone: string;
+  phone: string; // unique
   user_id: string; // ref → users
   tag_ids: string[]; // ref → tags
   note: string;

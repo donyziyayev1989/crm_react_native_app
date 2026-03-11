@@ -6,7 +6,7 @@ import { View } from "react-native";
 const AddCustomer = () => {
   const router = useRouter();
   return (
-    <View style={{ flex: 1, backgroundColor: "#fff" }}>
+    <View style={{ flex: 1, backgroundColor: "#fff", padding: 20 }}>
       <CustomerForm
         onSuccess={() => router.back()}
         onCancel={() => router.back()}

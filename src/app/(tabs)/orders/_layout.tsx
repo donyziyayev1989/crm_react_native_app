@@ -34,7 +34,9 @@ const Layout = () => {
       />
       <Stack.Screen
         name="dashboard/[orderId]"
-        options={{ title: "Partiya Dashboard" }}
+        options={{
+          title: "Partiya Dashboard",
+        }}
       />
     </Stack>
   );

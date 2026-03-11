@@ -1,9 +1,10 @@
 import Input from "@/components/Input";
 import PhoneInput from "@/components/PhoneInput";
 import Select from "@/components/Select";
-import db, { database, subDistricts } from "@/services/database";
+import db, { database, subDistricts, where } from "@/services/database";
 import { formatPhone } from "@/utils/format";
 import { Customer, District } from "@interfaces/index";
+import { useRouter } from "expo-router";
 import { collection } from "firebase/firestore";
 import React, { useMemo, useState } from "react";
 import {
@@ -37,6 +38,7 @@ const CustomerForm = ({
   initialData,
   hideOrders,
 }: CustomerFormProps) => {
+  const router = useRouter();
   const [selectedRegionId, setSelectedRegionId] = useState<string | null>(
     initialData?.region_name || null,
   );
@@ -124,6 +126,30 @@ const CustomerForm = ({
         phone: data.phone.replace(/\D/g, ""),
       };
 
+      // Check uniqueness
+      const existingCustomers = await db.customers.list(
+        where("phone", "==", cleanedData.phone),
+      );
+      const duplicate = existingCustomers.find((c) => c.id !== initialData?.id);
+
+      if (duplicate) {
+        Alert.alert(
+          "Mavjud mijoz",
+          "Ushbu telefon raqamli mijoz allaqachon mavjud! Mijoz sahifasiga o'tasizmi?",
+          [
+            { text: "Yo'q", style: "cancel" },
+            {
+              text: "Ha",
+              onPress: () => {
+                if (onCancel) onCancel();
+                router.push(`/(tabs)/customers/${duplicate.id}`);
+              },
+            },
+          ],
+        );
+        return;
+      }
+
       if (initialData?.id) {
         await db.customers.update(initialData.id, cleanedData);
         if (onSuccess) {
@@ -152,8 +178,9 @@ const CustomerForm = ({
       style={{ flex: 1 }}
     >
       <ScrollView
-        contentContainerStyle={styles.container}
+        contentContainerStyle={{ gap: 4 }}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
         {/* Name */}
         <View style={styles.fieldGroup}>
@@ -387,10 +414,6 @@ export default CustomerForm;
 const styles = StyleSheet.create({
   headerBtn: {
     paddingHorizontal: 12,
-  },
-  container: {
-    padding: 20,
-    gap: 4,
   },
   fieldGroup: {
     marginBottom: 16,

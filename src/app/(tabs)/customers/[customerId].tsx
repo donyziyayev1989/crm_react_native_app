@@ -1,4 +1,5 @@
 import Card from "@/components/Card";
+import OrderLineModal from "@/components/OrderLineModal";
 import db, { database } from "@/services/database";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Customer, OrderLine } from "@interfaces/index";
@@ -26,6 +27,7 @@ const CustomerDetail = () => {
   >({});
   const [ordersMap, setOrdersMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
+  const [addLineModal, setAddLineModal] = useState(false);
 
   useEffect(() => {
     if (!customerId) return;
@@ -63,7 +65,6 @@ const CustomerDetail = () => {
           (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
         );
         setOrderLines(customerLines);
-        console.log("orderLines", customerLines);
         // 3. Mahsulotlar map
         const pMap: Record<string, { name: string; price: number }> = {};
         productsData.forEach((p) => {
@@ -122,11 +123,6 @@ const CustomerDetail = () => {
               <MaterialIcons name="arrow-back" size={24} color={tintColor} />
             </Pressable>
           ),
-          headerRight: ({ tintColor }) => (
-            <Pressable className="p-2">
-              <MaterialIcons name="edit" size={24} color={tintColor} />
-            </Pressable>
-          ),
         }}
       />
 
@@ -164,7 +160,17 @@ const CustomerDetail = () => {
 
         {/* Order lines */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Xaridlar tarixi</Text>
+          <View className="flex-row items-center justify-between mb-2 px-1">
+            <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>
+              Xaridlar tarixi
+            </Text>
+            <Pressable
+              onPress={() => setAddLineModal(true)}
+              className="bg-indigo-50 p-2 rounded-full"
+            >
+              <MaterialIcons name="add" size={20} color="#6366f1" />
+            </Pressable>
+          </View>
           {orderLines.length === 0 ? (
             <Text style={styles.emptyText}>Xaridlar mavjud emas</Text>
           ) : (
@@ -229,6 +235,40 @@ const CustomerDetail = () => {
             ))
           )}
         </View>
+
+        <OrderLineModal
+          visible={addLineModal}
+          onClose={() => setAddLineModal(false)}
+          onSuccess={async (line: any, isEdit: boolean) => {
+            const extendedLine = {
+              ...line,
+              orderId: line.orderId || "",
+            };
+
+            if (extendedLine.orderId && !ordersMap[extendedLine.orderId]) {
+              try {
+                const orderData = await db.orders.get(extendedLine.orderId);
+                if (orderData?.name) {
+                  setOrdersMap((prev) => ({
+                    ...prev,
+                    [extendedLine.orderId]: orderData.name,
+                  }));
+                }
+              } catch (err) {
+                console.error("Failed to fetch order info", err);
+              }
+            }
+
+            if (isEdit) {
+              setOrderLines((prev) =>
+                prev.map((l) => (l.id === line.id ? extendedLine : l)),
+              );
+            } else {
+              setOrderLines((prev) => [extendedLine, ...prev]);
+            }
+          }}
+          initialCustomer={customer ? { ...customer, id: customerId } : null}
+        />
       </ScrollView>
     </>
   );

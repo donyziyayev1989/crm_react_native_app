@@ -19,7 +19,8 @@ interface CustomModalProps {
   contentContainerStyle?: ViewStyle;
   showBackdrop?: boolean;
   showHandle?: boolean;
-  modalTitle: string;
+  modalTitle?: string;
+  sheetStyle?: ViewStyle;
 }
 
 const CustomModal: React.FC<CustomModalProps> = ({
@@ -30,8 +31,11 @@ const CustomModal: React.FC<CustomModalProps> = ({
   showBackdrop = true,
   showHandle = true,
   modalTitle = "",
+  sheetStyle,
 }) => {
-  const panY = useRef(new Animated.Value(0)).current;
+  const panY = useRef(new Animated.Value(1000)).current;
+
+  const opacityAnim = useRef(new Animated.Value(0)).current;
 
   const resetPositionAnim = Animated.timing(panY, {
     toValue: 0,
@@ -44,6 +48,18 @@ const CustomModal: React.FC<CustomModalProps> = ({
     duration: 300,
     useNativeDriver: true,
   });
+
+  const fadeOutAnim = Animated.timing(opacityAnim, {
+    toValue: 0,
+    duration: 300,
+    useNativeDriver: true,
+  });
+
+  const handleClose = () => {
+    Animated.parallel([closeAnim, fadeOutAnim]).start(() => {
+      onClose();
+    });
+  };
 
   const panResponder = useRef(
     PanResponder.create({
@@ -58,9 +74,7 @@ const CustomModal: React.FC<CustomModalProps> = ({
       },
       onPanResponderRelease: (_, gs) => {
         if (gs.dy > 120 || gs.vy > 0.8) {
-          closeAnim.start(() => {
-            onClose();
-          });
+          handleClose();
         } else {
           resetPositionAnim.start();
         }
@@ -70,29 +84,51 @@ const CustomModal: React.FC<CustomModalProps> = ({
 
   useEffect(() => {
     if (visible) {
-      panY.setValue(0);
+      panY.setValue(1000);
+      opacityAnim.setValue(0);
+      Animated.parallel([
+        Animated.timing(opacityAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.spring(panY, {
+          toValue: 0,
+          bounciness: 0,
+          useNativeDriver: true,
+        }),
+      ]).start();
     }
-  }, [visible, panY]);
+  }, [visible, panY, opacityAnim]);
 
   return (
     <Modal
       visible={visible}
-      animationType="slide"
+      animationType="none"
       transparent
-      onRequestClose={onClose}
+      onRequestClose={handleClose}
     >
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={[{ flex: 1 }, contentContainerStyle]}
       >
         {showBackdrop && (
-          <Pressable
-            style={[StyleSheet.absoluteFill, styles.backdrop]}
-            onPress={onClose}
-          />
+          <Animated.View
+            style={[
+              StyleSheet.absoluteFill,
+              styles.backdrop,
+              { opacity: opacityAnim },
+            ]}
+          >
+            <Pressable style={StyleSheet.absoluteFill} onPress={handleClose} />
+          </Animated.View>
         )}
         <Animated.View
-          style={[styles.sheet, { transform: [{ translateY: panY }] }]}
+          style={[
+            styles.sheet,
+            sheetStyle,
+            { transform: [{ translateY: panY }] },
+          ]}
           {...panResponder.panHandlers}
           onStartShouldSetResponder={() => true}
         >

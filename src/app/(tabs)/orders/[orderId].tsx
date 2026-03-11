@@ -1,8 +1,6 @@
 import Card from "@/components/Card";
-import CustomModal from "@/components/CustomModal";
-import CustomerForm from "@/components/CustomerForm";
 import LostProductModal from "@/components/LostProductModal";
-import Select from "@/components/Select";
+import OrderLineModal from "@/components/OrderLineModal";
 import { Customer, Order, OrderLine, Product, Region } from "@/interfaces";
 import db, { subOrderLines } from "@/services/database";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
@@ -15,27 +13,13 @@ import {
   Alert,
   FlatList,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
-import { Rating } from "react-native-ratings";
-// ─── Order Line Form State ─────────────────────────────────────────────────────
-const emptyForm = {
-  customer_id: "",
-  region_name: "",
-  product_id: "",
-  product_count: "",
-  product_price: "",
-  rate: "",
-  state: "new",
-  delivery_price: "",
-  note: "",
-};
+// ─── Order detail logikasi ─────────────────────────────────────────────────────
 
 const OrderDetail = () => {
   const { orderId } = useLocalSearchParams<{ orderId: string }>();
@@ -51,14 +35,9 @@ const OrderDetail = () => {
 
   // Order line qo'shish / tahrirlash modal
   const [addLineModal, setAddLineModal] = useState(false);
-  const [form, setForm] = useState(emptyForm);
-  const [saving, setSaving] = useState(false);
   const [editLine, setEditLine] = useState<(OrderLine & { id: string }) | null>(
     null,
   );
-
-  // Mijoz qo'shish modal (order line modal ichida)
-  const [addCustomerModal, setAddCustomerModal] = useState(false);
 
   // Yo'qotilgan tovarlar modal
   const [addLostModal, setAddLostModal] = useState(false);
@@ -91,72 +70,12 @@ const OrderDetail = () => {
     fetchData();
   }, [orderId]);
 
-  // ─── Select options ───────────────────────────────────────────────────────────
-  const customerOptions = useMemo(
-    () =>
-      customers.map((c) => ({ label: `${c.name} (${c.phone})`, value: c.id! })),
-    [customers],
-  );
-  const productOptions = useMemo(
-    () => products.map((p) => ({ label: p.name, value: p.id! })),
-    [products],
-  );
-  const regionOptions = useMemo(
-    () => regions.map((r) => ({ label: r.name, value: r.id! })),
-    [regions],
-  );
-
-  // ─── Save / Update order line ────────────────────────────────────────────────
-  const handleSave = async () => {
-    if (!form.customer_id || !form.product_id || !form.product_count) {
-      Alert.alert("Xato", "Mijoz, mahsulot va miqdor to'ldirilishi shart");
-      return;
+  const handleSuccess = (line: OrderLine & { id: string }, isEdit: boolean) => {
+    if (isEdit) {
+      setOrderLines((prev) => prev.map((l) => (l.id === line.id ? line : l)));
+    } else {
+      setOrderLines((prev) => [...prev, line]);
     }
-    setSaving(true);
-    try {
-      const lineData: Omit<OrderLine, "id"> = {
-        customer_id: form.customer_id,
-        region_name: form.region_name || "",
-        product_id: form.product_id,
-        product_count: Number(form.product_count),
-        product_price: Number(form.product_price) || 0,
-        rate: Number(form.rate) || 0,
-        state: form.state || "new",
-        delivery_price: Number(form.delivery_price) || 0,
-        date: editLine?.date ?? new Date().toISOString(),
-        user_id: editLine?.user_id ?? "",
-        note: form.note || "",
-      };
-
-      if (editLine) {
-        // ─── Tahrirlash rejimi ───────────────────────────────────────────────
-        await subOrderLines.update(orderId!, editLine.id, lineData);
-        setOrderLines((prev) =>
-          prev.map((l) => (l.id === editLine.id ? { ...l, ...lineData } : l)),
-        );
-      } else {
-        // ─── Yangi qo'shish rejimi ───────────────────────────────────────────
-        const newId = await subOrderLines.create(orderId!, lineData);
-        setOrderLines((prev) => [
-          ...prev,
-          { id: newId, ...lineData } as OrderLine & { id: string },
-        ]);
-      }
-
-      setForm(emptyForm);
-      setEditLine(null);
-      setAddLineModal(false);
-    } catch (e) {
-      Alert.alert("Xato", "Saqlashda xatolik yuz berdi");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleClose = () => {
-    setForm(emptyForm);
-    setEditLine(null);
-    setAddLineModal(false);
   };
 
   // ─── Delete order line ───────────────────────────────────────────────────────
@@ -185,38 +104,11 @@ const OrderDetail = () => {
   // ─── Open edit modal with pre-filled form ────────────────────────────────────
   const openEditModal = (line: OrderLine & { id: string }) => {
     setEditLine(line);
-    setForm({
-      customer_id: line.customer_id,
-      region_name: line.region_name || "",
-      product_id: line.product_id,
-      product_count: String(line.product_count),
-      product_price: String(line.product_price),
-      rate: String(line.rate),
-      state: line.state,
-      delivery_price: String(line.delivery_price),
-      note: line.note || "",
-    });
     setAddLineModal(true);
   };
 
-  // ─── Yangi mijoz qo'shilgandan keyin avtomatik tanlash ───────────────────────
-  const handleCustomerCreated = (
-    customerId: string,
-    customerData: Customer,
-  ) => {
-    // Yangi mijozni tasdiqlangan ID bilan state ga qo'shamiz
-    const newCustomer = { id: customerId, ...customerData };
-    setCustomers((prev) => [...prev, newCustomer]);
-
-    // Mijoz yaratilgandan so'ng, uni va uning viloyatini avtomatik tanlaymiz
-    setForm((f) => ({
-      ...f,
-      customer_id: customerId,
-      region_name: customerData.region_name || f.region_name,
-    }));
-
-    // Mijoz qo'shish modalini yopamiz
-    setAddCustomerModal(false);
+  const handleCustomerAdded = (customer: Customer & { id: string }) => {
+    setCustomers((prev) => [...prev, customer]);
   };
 
   const getCustomerName = (id: string) =>
@@ -495,7 +387,6 @@ const OrderDetail = () => {
             <Pressable
               style={styles.addBtn}
               onPress={() => {
-                setForm(emptyForm);
                 setEditLine(null);
                 setAddLineModal(true);
               }}
@@ -507,213 +398,17 @@ const OrderDetail = () => {
         />
       </GestureHandlerRootView>
 
-      <CustomModal
+      <OrderLineModal
         visible={addLineModal}
-        onClose={() => setAddLineModal(false)}
-        contentContainerStyle={{ justifyContent: "flex-end" }}
-        modalTitle={editLine ? "Buyurtmani tahrirlash" : "Yangi buyurtma"}
-      >
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          {/* ── Mijoz: Select + "+" tugmasi ── */}
-          <Text style={styles.fieldLabel}>Mijoz</Text>
-          <View style={styles.selectRow}>
-            <View style={{ flex: 1 }}>
-              <Select
-                data={customerOptions}
-                placeholder="Mijozni tanlang"
-                searchPlaceholder="Qidirish..."
-                search
-                maxHeight={280}
-                value={form.customer_id || null}
-                onChange={(v) => {
-                  const cust = customers.find((c) => c.id === v);
-                  setForm((f) => ({
-                    ...f,
-                    customer_id: v,
-                    region_name: cust?.region_name || f.region_name,
-                  }));
-                }}
-              />
-            </View>
-            <Pressable
-              style={styles.addCustomerBtn}
-              onPress={() => setAddCustomerModal(true)}
-            >
-              <MaterialIcons name="person-add" size={20} color="#fff" />
-            </Pressable>
-          </View>
-
-          {/* ── Viloyat ── */}
-          <Text style={styles.fieldLabel}>Viloyat</Text>
-          <Select
-            data={regionOptions}
-            placeholder="Viloyatni tanlang"
-            searchPlaceholder="Qidirish..."
-            search={true}
-            maxHeight={280}
-            value={form.region_name || null}
-            onChange={(v) => setForm((f) => ({ ...f, region_name: v }))}
-          />
-
-          {/* ── Mahsulot ── */}
-          <Text style={styles.fieldLabel}>Mahsulot</Text>
-          <Select
-            data={productOptions}
-            placeholder="Mahsulotni tanlang"
-            searchPlaceholder="Qidirish..."
-            search={false}
-            maxHeight={280}
-            value={form.product_id}
-            onChange={(v) => {
-              const selectedProduct = products.find((p) => p.id === v);
-              setForm((f) => ({
-                ...f,
-                product_id: v,
-                product_price: selectedProduct
-                  ? String(selectedProduct.price)
-                  : f.product_price,
-              }));
-            }}
-          />
-
-          {/* ── Mahsulot narxi ── */}
-          <Text style={styles.fieldLabel}>Mahsulot narxi</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="0"
-            keyboardType="numeric"
-            value={form.product_price}
-            onChangeText={(v) => setForm((f) => ({ ...f, product_price: v }))}
-          />
-
-          {/* ── Miqdor ── */}
-          <Text style={styles.fieldLabel}>Miqdor</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="0"
-            keyboardType="numeric"
-            value={form.product_count}
-            onChangeText={(v) => setForm((f) => ({ ...f, product_count: v }))}
-          />
-          {/* ── Yetkazish narxi ── */}
-          <Text style={styles.fieldLabel}>Yetkazish narxi</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="0"
-            keyboardType="numeric"
-            value={form.delivery_price}
-            onChangeText={(v) => setForm((f) => ({ ...f, delivery_price: v }))}
-          />
-
-          {/* ── (Reyting) ── */}
-          <Text style={[styles.fieldLabel, { marginBottom: 15 }]}>Reyting</Text>
-          <Rating
-            type="star"
-            ratingCount={10}
-            imageSize={32}
-            showRating={false}
-            ratingBackgroundColor="red"
-            startingValue={Number(form.rate) || 0}
-            style={{
-              marginRight: "auto",
-            }}
-            onFinishRating={(v: number) =>
-              setForm((f) => ({ ...f, rate: String(v) }))
-            }
-          />
-
-          {/* ── Izoh ── */}
-          <Text style={styles.fieldLabel}>Izoh</Text>
-          <TextInput
-            style={[styles.input, { minHeight: 80 }]}
-            placeholder="Izoh yozing..."
-            multiline
-            value={form.note}
-            onChangeText={(v) => setForm((f) => ({ ...f, note: v }))}
-          />
-
-          {/* ── Holat ── */}
-          <Text style={styles.fieldLabel}>Holat</Text>
-          <View style={styles.stateRow}>
-            {(["new", "done", "cancel", "reschedule"] as const).map((s) => (
-              <Pressable
-                key={s}
-                onPress={() => setForm((f) => ({ ...f, state: s }))}
-                style={[
-                  styles.stateBtn,
-                  form.state === s && styles.stateBtnActive,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.stateBtnText,
-                    form.state === s && styles.stateBtnTextActive,
-                  ]}
-                >
-                  {s === "new"
-                    ? "Yangi"
-                    : s === "done"
-                      ? "Bajarildi"
-                      : s === "cancel"
-                        ? "Bekor"
-                        : s === "reschedule"
-                          ? "Boshqa partiyaga"
-                          : ""}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-
-          <View className="flex flex-row flex-1 gap-2 mt-3">
-            <Pressable
-              style={[styles.discardBtn]}
-              onPress={handleClose}
-              disabled={saving}
-            >
-              {saving ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.discardBtnText}>Bekor qilish</Text>
-              )}
-            </Pressable>
-
-            <Pressable
-              style={[styles.saveBtn, saving && { opacity: 0.6 }]}
-              onPress={handleSave}
-              disabled={saving}
-            >
-              {saving ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.saveBtnText}>Saqlash</Text>
-              )}
-            </Pressable>
-          </View>
-        </ScrollView>
-      </CustomModal>
-
-      <CustomModal
-        visible={addCustomerModal}
-        onClose={() => setAddCustomerModal(false)}
-        showBackdrop={false}
-        showHandle={false}
-        sheetStyle={styles.fullSheet}
-        modalTitle="Yangi mijoz qo'shish"
-      >
-        <View style={styles.fullSheetHeader}>
-          <Pressable onPress={() => setAddCustomerModal(false)}>
-            <MaterialIcons name="close" size={24} color="#6b7280" />
-          </Pressable>
-        </View>
-        <CustomerForm
-          onSuccess={handleCustomerCreated}
-          onCancel={() => setAddCustomerModal(false)}
-          hideOrders={true}
-        />
-      </CustomModal>
+        onClose={() => {
+          setAddLineModal(false);
+          setEditLine(null);
+        }}
+        orderId={orderId as string}
+        editLine={editLine}
+        onSuccess={handleSuccess}
+        onCustomerAdded={handleCustomerAdded}
+      />
 
       {/* ── Yo'qotilgan tovarlar qo'shish modali ── */}
       <LostProductModal
@@ -787,100 +482,10 @@ const styles = StyleSheet.create({
   },
   addBtnText: { color: "#fff", fontSize: 15, fontWeight: "600" },
 
-  // customer select row
-  selectRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  addCustomerBtn: {
-    backgroundColor: "#6366f1",
-    borderRadius: 10,
-    width: 46,
-    height: 46,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  selectedHint: { fontSize: 12, color: "#10b981", marginTop: 4, marginLeft: 2 },
   borderTop: {
     borderTopColor: "#999999",
     borderTopWidth: 1,
     borderStyle: "dashed",
   },
-  fieldLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#6b7280",
-    textTransform: "uppercase",
-    marginBottom: 4,
-    marginTop: 12,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    color: "#111827",
-    backgroundColor: "#fff",
-  },
-  stateRow: { flexDirection: "row", gap: 8, marginTop: 4 },
-  stateBtn: {
-    flex: 1,
-    padding: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  stateBtnActive: { backgroundColor: "#6366f1", borderColor: "#6366f1" },
-  stateBtnText: {
-    fontSize: 13,
-    color: "#374151",
-  },
-  stateBtnTextActive: { color: "#fff", fontWeight: "600" },
-  saveBtn: {
-    backgroundColor: "#6366f1",
-    borderRadius: 12,
-    padding: 14,
-    alignItems: "center",
-    flexGrow: 1,
-  },
-  discardBtn: {
-    backgroundColor: "#f5f5f5",
-    borderRadius: 12,
-    padding: 14,
-    alignItems: "center",
-    flexGrow: 1,
-  },
-  saveBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
   discardBtnText: { color: "#777", fontSize: 16, fontWeight: "700" },
-
-  // Add customer full modal
-  fullSheet: {
-    flex: 1,
-    backgroundColor: "#fff",
-    marginTop: 60,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-  },
-  fullSheetHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f3f4f6",
-  },
-  btnRow: {
-    flexDirection: "row",
-    gap: 12,
-    marginTop: 16,
-  },
-  cancelBtn: {
-    backgroundColor: "#f3f4f6",
-  },
-  cancelBtnText: {
-    color: "#4b5563",
-    fontSize: 16,
-    fontWeight: "600",
-  },
 });

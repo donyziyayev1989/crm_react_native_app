@@ -27,6 +27,7 @@ interface SelectProps {
   value?: any;
   name?: string;
   errors?: any;
+  disable?: boolean;
   /** Bir vaqtda nechta element yuklansin (default: 20) */
   pageSize?: number;
 }
@@ -44,6 +45,7 @@ const Select = ({
   value: propValue,
   name,
   errors,
+  disable,
   pageSize = 20,
 }: SelectProps) => {
   const [value, setValue] = useState<any>(null);
@@ -122,6 +124,7 @@ const Select = ({
         placeholder={placeholder}
         value={selected}
         search={search}
+        disable={disable}
         searchPlaceholder={searchPlaceholder}
         onChangeText={handleSearch}
         onChange={(item) => {
@@ -163,6 +166,7 @@ const Select = ({
       labelField="label"
       valueField="value"
       placeholder={placeholder}
+      disable={disable}
       searchPlaceholder={searchPlaceholder}
       inputSearchStyle={styles.inputSearchStyle}
       value={propValue !== undefined ? propValue : value}

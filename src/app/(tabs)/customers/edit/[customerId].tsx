@@ -38,7 +38,7 @@ const EditCustomer = () => {
           ),
         }}
       />
-      <View style={{ flex: 1, backgroundColor: "#fff" }}>
+      <View style={{ flex: 1, backgroundColor: "#fff", padding: 20 }}>
         {loading ? (
           <View
             style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
