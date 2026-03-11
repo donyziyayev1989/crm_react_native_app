@@ -22,6 +22,13 @@ export interface Order {
   lost_products: number;
 }
 
+export interface LostProduct {
+  id?: string;
+  count: number;
+  date: string;
+  timestamp: number;
+}
+
 export interface Product {
   id?: string;
   name: string;

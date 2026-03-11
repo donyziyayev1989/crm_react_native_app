@@ -13,6 +13,7 @@ import { database } from "../firebase/firebase";
 import type {
   Customer,
   District,
+  LostProduct,
   Order,
   OrderLine,
   Product,
@@ -224,6 +225,12 @@ export const subDistricts = createSubCollection<District>(
 export const subOrderLines = createSubCollection<OrderLine>(
   "orders",
   "order_lines",
+);
+
+/** orders/{orderId}/lost_products */
+export const subLostProducts = createSubCollection<LostProduct>(
+  "orders",
+  "lost_products",
 );
 
 export default db;

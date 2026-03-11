@@ -68,18 +68,27 @@ const Orders = () => {
         <Pressable
           onPress={() => {
             closeRow(item.id);
+            router.push(`/orders/dashboard/${item.id}`);
+          }}
+          className="bg-blue-400 w-16 h-full flex items-center justify-center"
+        >
+          <MaterialIcons name="analytics" size={22} color="white" />
+        </Pressable>
+        <Pressable
+          onPress={() => {
+            closeRow(item.id);
             router.push(`/orders/edit/${item.id}`);
           }}
           className="bg-slate-300 w-16 h-full flex items-center justify-center"
         >
           <MaterialIcons name="edit" size={22} color="white" />
         </Pressable>
-        <Pressable
+        {/* <Pressable
           onPress={() => handleDelete(item.id)}
           className="bg-red-400 w-16 h-full flex items-center justify-center"
         >
           <MaterialIcons name="delete-outline" size={22} color="white" />
-        </Pressable>
+        </Pressable> */}
       </View>
     );
   };
@@ -151,7 +160,14 @@ const Orders = () => {
                         <Text className="text-sm text-gray-600">
                           Yo'qotilgan:{" "}
                           <Text className="font-semibold text-red-500">
-                            {item.lost_products}
+                            {item.lost_products || 0} ({" "}
+                            {item.product_count
+                              ? (
+                                  ((item.lost_products || 0) * 100) /
+                                  item.product_count
+                                ).toFixed(1)
+                              : 0}
+                            % )
                           </Text>
                         </Text>
                       </View>

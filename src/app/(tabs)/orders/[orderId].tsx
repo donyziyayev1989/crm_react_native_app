@@ -1,5 +1,7 @@
 import Card from "@/components/Card";
+import CustomModal from "@/components/CustomModal";
 import CustomerForm from "@/components/CustomerForm";
+import LostProductModal from "@/components/LostProductModal";
 import Select from "@/components/Select";
 import { Customer, Order, OrderLine, Product, Region } from "@/interfaces";
 import db, { subOrderLines } from "@/services/database";
@@ -12,9 +14,6 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -60,6 +59,9 @@ const OrderDetail = () => {
 
   // Mijoz qo'shish modal (order line modal ichida)
   const [addCustomerModal, setAddCustomerModal] = useState(false);
+
+  // Yo'qotilgan tovarlar modal
+  const [addLostModal, setAddLostModal] = useState(false);
 
   // ─── Fetch order + lines + reference data ────────────────────────────────────
   useEffect(() => {
@@ -161,7 +163,7 @@ const OrderDetail = () => {
   const handleDelete = (line: OrderLine & { id: string }) => {
     Alert.alert(
       "O'chirishni tasdiqlang",
-      "Bu buyurtma satrini o'chirishni xohlaysizmi?",
+      "Bu buyurtmani o'chirishni xohlaysizmi?",
       [
         { text: "Bekor", style: "cancel" },
         {
@@ -292,7 +294,23 @@ const OrderDetail = () => {
 
   return (
     <View style={styles.container}>
-      <Stack.Screen options={{ title: order?.name ?? "Buyurtma tafsiloti" }} />
+      <Stack.Screen
+        options={{
+          title: order?.name ?? "Buyurtma tafsiloti",
+          headerRight: () => (
+            <Pressable
+              onPress={() => setAddLostModal(true)}
+              className="text-danger p-3"
+            >
+              <MaterialIcons
+                name="remove-circle-outline"
+                size={24}
+                color="#ef4444"
+              />
+            </Pressable>
+          ),
+        }}
+      />
       <GestureHandlerRootView style={{ flex: 1 }}>
         <FlatList
           data={sortedOrderLines}
@@ -301,9 +319,7 @@ const OrderDetail = () => {
           ListEmptyComponent={() => (
             <View style={styles.empty}>
               <MaterialIcons name="inbox" size={40} color="#d1d5db" />
-              <Text style={styles.emptyText}>
-                Hech qanday buyurtma satri yo'q
-              </Text>
+              <Text style={styles.emptyText}>Hech qanday buyurtma yo'q</Text>
             </View>
           )}
           renderItem={({ item, index }) => {
@@ -485,251 +501,232 @@ const OrderDetail = () => {
               }}
             >
               <MaterialIcons name="add" size={20} color="#fff" />
-              <Text style={styles.addBtnText}>Buyurtma satri qo'shish</Text>
+              <Text style={styles.addBtnText}>Buyurtma qo'shish</Text>
             </Pressable>
           )}
         />
       </GestureHandlerRootView>
 
-      <Modal
+      <CustomModal
         visible={addLineModal}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setAddLineModal(false)}
+        onClose={() => setAddLineModal(false)}
+        contentContainerStyle={{ justifyContent: "flex-end" }}
+        modalTitle={editLine ? "Buyurtmani tahrirlash" : "Yangi buyurtma"}
       >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={{ flex: 1, justifyContent: "flex-end" }}
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
-          <Pressable
-            style={[StyleSheet.absoluteFill, styles.backdrop]}
-            onPress={() => setAddLineModal(false)}
-          />
-          <View style={styles.sheet}>
-            <View style={styles.sheetHandle} />
-            <Text style={styles.sheetTitle}>
-              {editLine
-                ? "Buyurtma satrini tahrirlash"
-                : "Yangi buyurtma satri"}
-            </Text>
-
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-            >
-              {/* ── Mijoz: Select + "+" tugmasi ── */}
-              <Text style={styles.fieldLabel}>Mijoz</Text>
-              <View style={styles.selectRow}>
-                <View style={{ flex: 1 }}>
-                  <Select
-                    data={customerOptions}
-                    placeholder="Mijozni tanlang"
-                    searchPlaceholder="Qidirish..."
-                    search
-                    maxHeight={280}
-                    value={form.customer_id || null}
-                    onChange={(v) => {
-                      const cust = customers.find((c) => c.id === v);
-                      setForm((f) => ({
-                        ...f,
-                        customer_id: v,
-                        region_name: cust?.region_name || f.region_name,
-                      }));
-                    }}
-                  />
-                </View>
-                <Pressable
-                  style={styles.addCustomerBtn}
-                  onPress={() => setAddCustomerModal(true)}
-                >
-                  <MaterialIcons name="person-add" size={20} color="#fff" />
-                </Pressable>
-              </View>
-
-              {/* ── Viloyat ── */}
-              <Text style={styles.fieldLabel}>Viloyat</Text>
+          {/* ── Mijoz: Select + "+" tugmasi ── */}
+          <Text style={styles.fieldLabel}>Mijoz</Text>
+          <View style={styles.selectRow}>
+            <View style={{ flex: 1 }}>
               <Select
-                data={regionOptions}
-                placeholder="Viloyatni tanlang"
+                data={customerOptions}
+                placeholder="Mijozni tanlang"
                 searchPlaceholder="Qidirish..."
-                search={true}
+                search
                 maxHeight={280}
-                value={form.region_name || null}
-                onChange={(v) => setForm((f) => ({ ...f, region_name: v }))}
-              />
-
-              {/* ── Mahsulot ── */}
-              <Text style={styles.fieldLabel}>Mahsulot</Text>
-              <Select
-                data={productOptions}
-                placeholder="Mahsulotni tanlang"
-                searchPlaceholder="Qidirish..."
-                search={false}
-                maxHeight={280}
-                value={form.product_id}
+                value={form.customer_id || null}
                 onChange={(v) => {
-                  const selectedProduct = products.find((p) => p.id === v);
+                  const cust = customers.find((c) => c.id === v);
                   setForm((f) => ({
                     ...f,
-                    product_id: v,
-                    product_price: selectedProduct
-                      ? String(selectedProduct.price)
-                      : f.product_price,
+                    customer_id: v,
+                    region_name: cust?.region_name || f.region_name,
                   }));
                 }}
               />
-
-              {/* ── Mahsulot narxi ── */}
-              <Text style={styles.fieldLabel}>Mahsulot narxi</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="0"
-                keyboardType="numeric"
-                value={form.product_price}
-                onChangeText={(v) =>
-                  setForm((f) => ({ ...f, product_price: v }))
-                }
-              />
-
-              {/* ── Miqdor ── */}
-              <Text style={styles.fieldLabel}>Miqdor</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="0"
-                keyboardType="numeric"
-                value={form.product_count}
-                onChangeText={(v) =>
-                  setForm((f) => ({ ...f, product_count: v }))
-                }
-              />
-              {/* ── Yetkazish narxi ── */}
-              <Text style={styles.fieldLabel}>Yetkazish narxi</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="0"
-                keyboardType="numeric"
-                value={form.delivery_price}
-                onChangeText={(v) =>
-                  setForm((f) => ({ ...f, delivery_price: v }))
-                }
-              />
-
-              {/* ── (Reyting) ── */}
-              <Text style={[styles.fieldLabel, { marginBottom: 15 }]}>
-                Reyting
-              </Text>
-              <Rating
-                type="star"
-                ratingCount={10}
-                imageSize={32}
-                showRating={false}
-                ratingBackgroundColor="red"
-                startingValue={Number(form.rate) || 0}
-                style={{
-                  marginRight: "auto",
-                }}
-                onFinishRating={(v: number) =>
-                  setForm((f) => ({ ...f, rate: String(v) }))
-                }
-              />
-
-              {/* ── Izoh ── */}
-              <Text style={styles.fieldLabel}>Izoh</Text>
-              <TextInput
-                style={[styles.input, { minHeight: 80 }]}
-                placeholder="Izoh yozing..."
-                multiline
-                value={form.note}
-                onChangeText={(v) => setForm((f) => ({ ...f, note: v }))}
-              />
-
-              {/* ── Holat ── */}
-              <Text style={styles.fieldLabel}>Holat</Text>
-              <View style={styles.stateRow}>
-                {(["new", "done", "cancel", "reschedule"] as const).map((s) => (
-                  <Pressable
-                    key={s}
-                    onPress={() => setForm((f) => ({ ...f, state: s }))}
-                    style={[
-                      styles.stateBtn,
-                      form.state === s && styles.stateBtnActive,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.stateBtnText,
-                        form.state === s && styles.stateBtnTextActive,
-                      ]}
-                    >
-                      {s === "new"
-                        ? "Yangi"
-                        : s === "done"
-                          ? "Bajarildi"
-                          : s === "cancel"
-                            ? "Bekor"
-                            : s === "reschedule"
-                              ? "Boshqa partiyaga"
-                              : ""}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-
-              <View className="flex flex-row flex-1 gap-2 mt-3">
-                <Pressable
-                  style={[styles.discardBtn]}
-                  onPress={handleClose}
-                  disabled={saving}
-                >
-                  {saving ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Text style={styles.discardBtnText}>Bekor qilish</Text>
-                  )}
-                </Pressable>
-
-                <Pressable
-                  style={[styles.saveBtn, saving && { opacity: 0.6 }]}
-                  onPress={handleSave}
-                  disabled={saving}
-                >
-                  {saving ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Text style={styles.saveBtnText}>Saqlash</Text>
-                  )}
-                </Pressable>
-              </View>
-            </ScrollView>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      <Modal
-        visible={addCustomerModal}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setAddCustomerModal(false)}
-      >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={{ flex: 1 }}
-        >
-          <View style={styles.fullSheet}>
-            <View style={styles.fullSheetHeader}>
-              <Text style={styles.sheetTitle}>Yangi mijoz qo'shish</Text>
-              <Pressable onPress={() => setAddCustomerModal(false)}>
-                <MaterialIcons name="close" size={24} color="#6b7280" />
-              </Pressable>
             </View>
-            <CustomerForm
-              onSuccess={handleCustomerCreated}
-              onCancel={() => setAddCustomerModal(false)}
-              hideOrders={true}
-            />
+            <Pressable
+              style={styles.addCustomerBtn}
+              onPress={() => setAddCustomerModal(true)}
+            >
+              <MaterialIcons name="person-add" size={20} color="#fff" />
+            </Pressable>
           </View>
-        </KeyboardAvoidingView>
-      </Modal>
+
+          {/* ── Viloyat ── */}
+          <Text style={styles.fieldLabel}>Viloyat</Text>
+          <Select
+            data={regionOptions}
+            placeholder="Viloyatni tanlang"
+            searchPlaceholder="Qidirish..."
+            search={true}
+            maxHeight={280}
+            value={form.region_name || null}
+            onChange={(v) => setForm((f) => ({ ...f, region_name: v }))}
+          />
+
+          {/* ── Mahsulot ── */}
+          <Text style={styles.fieldLabel}>Mahsulot</Text>
+          <Select
+            data={productOptions}
+            placeholder="Mahsulotni tanlang"
+            searchPlaceholder="Qidirish..."
+            search={false}
+            maxHeight={280}
+            value={form.product_id}
+            onChange={(v) => {
+              const selectedProduct = products.find((p) => p.id === v);
+              setForm((f) => ({
+                ...f,
+                product_id: v,
+                product_price: selectedProduct
+                  ? String(selectedProduct.price)
+                  : f.product_price,
+              }));
+            }}
+          />
+
+          {/* ── Mahsulot narxi ── */}
+          <Text style={styles.fieldLabel}>Mahsulot narxi</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="0"
+            keyboardType="numeric"
+            value={form.product_price}
+            onChangeText={(v) => setForm((f) => ({ ...f, product_price: v }))}
+          />
+
+          {/* ── Miqdor ── */}
+          <Text style={styles.fieldLabel}>Miqdor</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="0"
+            keyboardType="numeric"
+            value={form.product_count}
+            onChangeText={(v) => setForm((f) => ({ ...f, product_count: v }))}
+          />
+          {/* ── Yetkazish narxi ── */}
+          <Text style={styles.fieldLabel}>Yetkazish narxi</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="0"
+            keyboardType="numeric"
+            value={form.delivery_price}
+            onChangeText={(v) => setForm((f) => ({ ...f, delivery_price: v }))}
+          />
+
+          {/* ── (Reyting) ── */}
+          <Text style={[styles.fieldLabel, { marginBottom: 15 }]}>Reyting</Text>
+          <Rating
+            type="star"
+            ratingCount={10}
+            imageSize={32}
+            showRating={false}
+            ratingBackgroundColor="red"
+            startingValue={Number(form.rate) || 0}
+            style={{
+              marginRight: "auto",
+            }}
+            onFinishRating={(v: number) =>
+              setForm((f) => ({ ...f, rate: String(v) }))
+            }
+          />
+
+          {/* ── Izoh ── */}
+          <Text style={styles.fieldLabel}>Izoh</Text>
+          <TextInput
+            style={[styles.input, { minHeight: 80 }]}
+            placeholder="Izoh yozing..."
+            multiline
+            value={form.note}
+            onChangeText={(v) => setForm((f) => ({ ...f, note: v }))}
+          />
+
+          {/* ── Holat ── */}
+          <Text style={styles.fieldLabel}>Holat</Text>
+          <View style={styles.stateRow}>
+            {(["new", "done", "cancel", "reschedule"] as const).map((s) => (
+              <Pressable
+                key={s}
+                onPress={() => setForm((f) => ({ ...f, state: s }))}
+                style={[
+                  styles.stateBtn,
+                  form.state === s && styles.stateBtnActive,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.stateBtnText,
+                    form.state === s && styles.stateBtnTextActive,
+                  ]}
+                >
+                  {s === "new"
+                    ? "Yangi"
+                    : s === "done"
+                      ? "Bajarildi"
+                      : s === "cancel"
+                        ? "Bekor"
+                        : s === "reschedule"
+                          ? "Boshqa partiyaga"
+                          : ""}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <View className="flex flex-row flex-1 gap-2 mt-3">
+            <Pressable
+              style={[styles.discardBtn]}
+              onPress={handleClose}
+              disabled={saving}
+            >
+              {saving ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.discardBtnText}>Bekor qilish</Text>
+              )}
+            </Pressable>
+
+            <Pressable
+              style={[styles.saveBtn, saving && { opacity: 0.6 }]}
+              onPress={handleSave}
+              disabled={saving}
+            >
+              {saving ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.saveBtnText}>Saqlash</Text>
+              )}
+            </Pressable>
+          </View>
+        </ScrollView>
+      </CustomModal>
+
+      <CustomModal
+        visible={addCustomerModal}
+        onClose={() => setAddCustomerModal(false)}
+        showBackdrop={false}
+        showHandle={false}
+        sheetStyle={styles.fullSheet}
+        modalTitle="Yangi mijoz qo'shish"
+      >
+        <View style={styles.fullSheetHeader}>
+          <Pressable onPress={() => setAddCustomerModal(false)}>
+            <MaterialIcons name="close" size={24} color="#6b7280" />
+          </Pressable>
+        </View>
+        <CustomerForm
+          onSuccess={handleCustomerCreated}
+          onCancel={() => setAddCustomerModal(false)}
+          hideOrders={true}
+        />
+      </CustomModal>
+
+      {/* ── Yo'qotilgan tovarlar qo'shish modali ── */}
+      <LostProductModal
+        visible={addLostModal}
+        onClose={() => setAddLostModal(false)}
+        orderId={orderId as string}
+        order={order}
+        onSuccess={(newLost, newTotal) => {
+          if (order) {
+            setOrder({ ...order, lost_products: newTotal });
+          }
+        }}
+      />
     </View>
   );
 };
@@ -789,30 +786,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   addBtnText: { color: "#fff", fontSize: 15, fontWeight: "600" },
-
-  // Order line modal
-  backdrop: { backgroundColor: "rgba(0,0,0,0.35)" },
-  sheet: {
-    backgroundColor: "#fff",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    maxHeight: "90%",
-  },
-  sheetHandle: {
-    width: 36,
-    height: 4,
-    backgroundColor: "#d1d5db",
-    borderRadius: 2,
-    alignSelf: "center",
-    marginBottom: 16,
-  },
-  sheetTitle: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: "#111827",
-    marginBottom: 4,
-  },
 
   // customer select row
   selectRow: { flexDirection: "row", alignItems: "center", gap: 8 },
@@ -896,5 +869,18 @@ const styles = StyleSheet.create({
     padding: 20,
     borderBottomWidth: 1,
     borderBottomColor: "#f3f4f6",
+  },
+  btnRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 16,
+  },
+  cancelBtn: {
+    backgroundColor: "#f3f4f6",
+  },
+  cancelBtnText: {
+    color: "#4b5563",
+    fontSize: 16,
+    fontWeight: "600",
   },
 });
