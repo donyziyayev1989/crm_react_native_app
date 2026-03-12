@@ -1,82 +1,55 @@
-import LostProductModal from "@/components/LostProductModal";
-import OrderLineCard from "@/components/OrderLineCard";
-import OrderLineModal from "@/components/OrderLineModal";
-import {
-  Customer,
-  Order,
-  OrderLine,
-  Product,
-  Region,
-  User,
-} from "@/interfaces";
-import db, { subOrderLines } from "@/services/database";
+import Card from "@/components/Card";
+import OrderDetailView from "@/components/OrderDetailView";
+import OrderModal from "@/components/OrderModal";
+import { Customer, Order, Product, User, ProductLot } from "@/interfaces";
+import db from "@/services/database";
+import { formatDate, formatMoney, formatPhone } from "@utils/format";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { callPhone, openTelegram } from "@utils/actions";
-import { formatPhone } from "@utils/format";
-import { Stack, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useLocalSearchParams, useRouter, Stack } from "expo-router";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
-  FlatList,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
-import { GestureHandlerRootView } from "react-native-gesture-handler";
-import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
-// ─── Order detail logikasi ─────────────────────────────────────────────────────
+import { callPhone, openTelegram } from "@utils/actions";
 
+/**
+ * Buyurtma Tafsiloti sahifasi
+ */
 const OrderDetail = () => {
   const { orderId } = useLocalSearchParams<{ orderId: string }>();
-
   const [order, setOrder] = useState<(Order & { id: string }) | null>(null);
-  const [orderLines, setOrderLines] = useState<(OrderLine & { id: string })[]>(
-    [],
-  );
-  const [customers, setCustomers] = useState<(Customer & { id: string })[]>([]);
-  const [products, setProducts] = useState<(Product & { id: string })[]>([]);
-  const [regions, setRegions] = useState<(Region & { id: string })[]>([]);
-  const [users, setUsers] = useState<(User & { id: string })[]>([]);
+  const [customer, setCustomer] = useState<Customer | null>(null);
+  const [product, setProduct] = useState<Product | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [lot, setLot] = useState<ProductLot | null>(null);
   const [loading, setLoading] = useState(true);
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const router = useRouter();
 
-  // Order line qo'shish / tahrirlash modal
-  const [addLineModal, setAddLineModal] = useState(false);
-  const [editLine, setEditLine] = useState<(OrderLine & { id: string }) | null>(
-    null,
-  );
-
-  // Yo'qotilgan tovarlar modal
-  const [addLostModal, setAddLostModal] = useState(false);
-
-  // ─── Fetch order + lines + reference data ────────────────────────────────────
   useEffect(() => {
     if (!orderId) return;
     const fetchData = async () => {
       setLoading(true);
       try {
-        const [
-          orderData,
-          linesData,
-          customersData,
-          productsData,
-          regionsData,
-          usersData,
-        ] = await Promise.all([
-          db.orders.get(orderId),
-          subOrderLines.list(orderId),
-          db.customers.list(),
-          db.products.list(),
-          db.regions.list(),
-          db.users.list(),
-        ]);
-        setOrder(orderData as Order & { id: string });
-        setOrderLines(linesData as (OrderLine & { id: string })[]);
-        setCustomers(customersData as (Customer & { id: string })[]);
-        setProducts(productsData as (Product & { id: string })[]);
-        setRegions(regionsData as (Region & { id: string })[]);
-        setUsers(usersData as (User & { id: string })[]);
+        const orderData = await db.orders.get(orderId);
+        if (orderData) {
+          setOrder(orderData as (Order & { id: string }));
+          const [cust, prod, usr, lt] = await Promise.all([
+            db.customers.get((orderData as Order).customer_id),
+            db.products.get((orderData as Order).product_id),
+            db.users.get((orderData as Order).user_id),
+            db.lots.get((orderData as Order).lotId),
+          ]);
+          setCustomer(cust);
+          setProduct(prod);
+          setUser(usr);
+          setLot(lt);
+        }
       } catch (e) {
         console.error(e);
       } finally {
@@ -86,124 +59,6 @@ const OrderDetail = () => {
     fetchData();
   }, [orderId]);
 
-  const handleSuccess = (line: OrderLine & { id: string }, isEdit: boolean) => {
-    if (isEdit) {
-      setOrderLines((prev) => prev.map((l) => (l.id === line.id ? line : l)));
-    } else {
-      setOrderLines((prev) => [...prev, line]);
-    }
-  };
-
-  // ─── Delete order line ───────────────────────────────────────────────────────
-  const handleDelete = (line: OrderLine & { id: string }) => {
-    Alert.alert(
-      "O'chirishni tasdiqlang",
-      "Bu buyurtmani o'chirishni xohlaysizmi?",
-      [
-        { text: "Bekor", style: "cancel" },
-        {
-          text: "O'chirish",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await subOrderLines.delete(orderId!, line.id);
-              setOrderLines((prev) => prev.filter((l) => l.id !== line.id));
-            } catch {
-              Alert.alert("Xato", "O'chirishda xatolik yuz berdi");
-            }
-          },
-        },
-      ],
-    );
-  };
-
-  // ─── Open edit modal with pre-filled form ────────────────────────────────────
-  const openEditModal = (line: OrderLine & { id: string }) => {
-    setEditLine(line);
-    setAddLineModal(true);
-  };
-
-  const handleCustomerAdded = (customer: Customer & { id: string }) => {
-    setCustomers((prev) => [...prev, customer]);
-  };
-
-  const getCustomerName = (id: string) =>
-    customers.find((c) => c.id === id)?.name ?? id;
-  const getCustomerPhone = (id: string) =>
-    customers.find((c) => c.id === id)?.phone ?? "";
-  const getCustomerTelegramId = (id: string) =>
-    customers.find((c) => c.id === id)?.telegram_id ?? "";
-  const getProductName = (id: string) =>
-    products.find((p) => p.id === id)?.name ?? id;
-  const getRegionName = (id: string) =>
-    regions.find((r) => r.id === id)?.name ?? id;
-
-  // ─── Sorted Order Lines for Grouping ─────────────────────────────────────────
-  const sortedOrderLines = useMemo(() => {
-    return [...orderLines].sort((a, b) => {
-      const rA = getRegionName(a.region_name || "");
-      const rB = getRegionName(b.region_name || "");
-      if (rA < rB) return -1;
-      if (rA > rB) return 1;
-      return 0;
-    });
-  }, [orderLines, regions]);
-
-  const usersMap = useMemo(() => {
-    const map: Record<string, string> = {};
-    users.forEach((u) => {
-      map[u.id!] = u.name;
-    });
-    return map;
-  }, [users]);
-
-  // ─── Swipeable row refs (must be before any early return) ────────────────────
-  const rowRefs = useRef(new Map<string, any>());
-  const prevOpenedRow = useRef<string | null>(null);
-  const closeRow = (id: string) => {
-    if (prevOpenedRow.current !== null && prevOpenedRow.current !== id) {
-      const row = rowRefs.current.get(prevOpenedRow.current);
-      if (row) row.close();
-    }
-    prevOpenedRow.current = id;
-  };
-
-  const renderRightPanel = (item: OrderLine & { id: string }) => {
-    const phone = getCustomerPhone(item.customer_id);
-    return (
-      <View className="bg-white  rounded-r-2xl overflow-hidden d-flex items-center">
-        <View className="flex-row z-2 h-16 my-auto">
-          <Pressable
-            onPress={() => openEditModal(item)}
-            className="bg-slate-400 w-16 h-full flex items-center justify-center"
-          >
-            <MaterialIcons name="edit" size={22} color="white" />
-          </Pressable>
-          <Pressable
-            onPress={() => handleDelete(item)}
-            className="bg-red-400 w-16 h-full flex items-center justify-center"
-          >
-            <MaterialIcons name="delete-outline" size={22} color="white" />
-          </Pressable>
-          <Pressable
-            onPress={() => callPhone(phone)}
-            className="bg-green-500 w-16 h-full flex items-center justify-center"
-          >
-            <MaterialIcons name="phone" size={24} color="white" />
-          </Pressable>
-          <Pressable
-            onPress={() =>
-              openTelegram(getCustomerTelegramId(item.customer_id) || phone)
-            }
-            className="bg-blue-400 w-16 h-full flex items-center justify-center"
-          >
-            <MaterialIcons name="telegram" size={24} color="white" />
-          </Pressable>
-        </View>
-      </View>
-    );
-  };
-
   if (loading) {
     return (
       <View style={styles.center}>
@@ -212,192 +67,74 @@ const OrderDetail = () => {
     );
   }
 
+  if (!order) {
+    return (
+      <View style={styles.center}>
+        <Text>Buyurtma topilmadi</Text>
+      </View>
+    );
+  }
+
   return (
-    <View style={styles.container}>
-      <Stack.Screen
-        options={{
-          title: order?.name ?? "Buyurtma tafsiloti",
-          headerRight: () => (
-            <Pressable
-              onPress={() => setAddLostModal(true)}
-              className="text-danger p-3"
-            >
-              <MaterialIcons
-                name="remove-circle-outline"
-                size={24}
-                color="#ef4444"
-              />
-            </Pressable>
-          ),
-        }}
-      />
-      <GestureHandlerRootView style={{ flex: 1 }}>
-        <FlatList
-          data={sortedOrderLines}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
-          ListEmptyComponent={() => (
-            <View style={styles.empty}>
-              <MaterialIcons name="inbox" size={40} color="#d1d5db" />
-              <Text style={styles.emptyText}>Hech qanday buyurtma yo'q</Text>
-            </View>
-          )}
-          renderItem={({ item, index }) => {
-            const regionName = getRegionName(item.region_name || "");
-            const showHeader =
-              index === 0 ||
-              getRegionName(sortedOrderLines[index - 1].region_name || "") !==
-                regionName;
-
-            return (
-              <View>
-                {showHeader && (
-                  <View className="mt-2 mb-3 flex-row items-center justify-between">
-                    <Text className="uppercase font-semibold ">
-                      {regionName || "Viloyat aniqlanmagan"}
-                    </Text>
-                    <Text>
-                      {sortedOrderLines
-                        .filter(
-                          (li) =>
-                            getRegionName(li.region_name || "") === regionName,
-                        )
-                        .reduce(
-                          (acc, curr) => acc + curr.product_count,
-                          0,
-                        )}{" "}
-                      <Text className="text-muted text-xs">dona mahsulot</Text>
-                    </Text>
-                  </View>
-                )}
-                <View className="mb-2 bg-white rounded-2xl">
-                  <ReanimatedSwipeable
-                    ref={
-                      ((ref: any) => {
-                        if (item.id) {
-                          if (ref) rowRefs.current.set(item.id, ref);
-                          else rowRefs.current.delete(item.id);
-                        }
-                      }) as any
-                    }
-                    onSwipeableWillOpen={() => item.id && closeRow(item.id)}
-                    renderRightActions={() => renderRightPanel(item)}
-                  >
-                    <OrderLineCard
-                      item={item}
-                      title={getCustomerName(item.customer_id)}
-                      subtitle={formatPhone(getCustomerPhone(item.customer_id))}
-                      productName={getProductName(item.product_id)}
-                      userName={usersMap[item.user_id]}
-                    />
-                  </ReanimatedSwipeable>
-                </View>
-              </View>
-            );
-          }}
-          ListFooterComponent={() => (
-            <Pressable
-              style={styles.addBtn}
-              onPress={() => {
-                setEditLine(null);
-                setAddLineModal(true);
-              }}
-            >
-              <MaterialIcons name="add" size={20} color="#fff" />
-              <Text style={styles.addBtnText}>Buyurtma qo'shish</Text>
-            </Pressable>
-          )}
+    <ScrollView style={styles.container}>
+      <Stack.Screen options={{ title: customer?.name || "Buyurtma" }} />
+      <View style={styles.content}>
+        <OrderDetailView
+          order={order}
+          customer={customer}
+          product={product}
+          user={user}
+          lot={lot}
         />
-      </GestureHandlerRootView>
 
-      <OrderLineModal
-        visible={addLineModal}
-        onClose={() => {
-          setAddLineModal(false);
-          setEditLine(null);
-        }}
-        orderId={orderId as string}
-        editLine={editLine}
-        onSuccess={handleSuccess}
-        onCustomerAdded={handleCustomerAdded}
-      />
+        <View style={styles.actions}>
+          <Pressable style={styles.editBtn} onPress={() => setEditModalVisible(true)}>
+            <MaterialIcons name="edit" size={20} color="#fff" />
+            <Text style={styles.btnText}>Tahrirlash</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.telegramBtn, { backgroundColor: "#0088cc" }]}
+            onPress={() => openTelegram(customer?.telegram_id || customer?.phone || "")}
+          >
+            <MaterialIcons name="telegram" size={20} color="#fff" />
+            <Text style={styles.btnText}>Telegram</Text>
+          </Pressable>
+        </View>
+      </View>
 
-      {/* ── Yo'qotilgan tovarlar qo'shish modali ── */}
-      <LostProductModal
-        visible={addLostModal}
-        onClose={() => setAddLostModal(false)}
-        orderId={orderId as string}
-        order={order}
-        onSuccess={(newLost, newTotal) => {
-          if (order) {
-            setOrder({ ...order, lost_products: newTotal });
-          }
+      <OrderModal
+        visible={editModalVisible}
+        onClose={() => setEditModalVisible(false)}
+        editLine={order}
+        onSuccess={(updatedOrder) => {
+          setOrder(updatedOrder);
+          setEditModalVisible(false);
         }}
       />
-    </View>
+    </ScrollView>
   );
+};
+
+const getStatusColor = (state: string) => {
+  switch (state) {
+    case "done": return "#28a745";
+    case "cancel": return "#dc3545";
+    case "reschedule": return "#ffc107";
+    default: return "#6366f1";
+  }
 };
 
 export default OrderDetail;
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, backgroundColor: "#f9fafb" },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  listContent: { padding: 12, paddingBottom: 32 },
-
-  orderName: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: "#111827",
-    marginBottom: 8,
-  },
-  row: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginTop: 4 },
-  infoItem: { flexDirection: "row", alignItems: "center", gap: 4 },
-  infoText: { fontSize: 15, color: "#6b7280" },
-  phoneText: { fontSize: 15, color: "#6b7280" },
-  bold: { fontWeight: "700", color: "#111827" },
-
-  sectionHeader: { marginBottom: 8 },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#374151",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-
-  lineIndex: { fontSize: 13, fontWeight: "600", color: "#6b7280" },
-  stateBadge: {
-    fontSize: 11,
-    fontWeight: "600",
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 99,
-  },
-  stateNew: { backgroundColor: "#dbeafe", color: "#1d4ed8" },
-  stateDone: { backgroundColor: "#dcfce7", color: "#15803d" },
-  stateCancel: { backgroundColor: "#fee2e2", color: "#b91c1c" },
-  stateReschedule: { backgroundColor: "#f97316", color: "#fff" },
-
-  empty: { alignItems: "center", paddingVertical: 40, gap: 8 },
-  emptyText: { color: "#9ca3af", fontSize: 14 },
-
-  addBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#6366f1",
-    borderRadius: 12,
-    padding: 14,
-    gap: 8,
-    marginTop: 8,
-  },
-  addBtnText: { color: "#fff", fontSize: 15, fontWeight: "600" },
-
-  borderTop: {
-    borderTopColor: "#999999",
-    borderTopWidth: 1,
-    borderStyle: "dashed",
-  },
-  discardBtnText: { color: "#777", fontSize: 16, fontWeight: "700" },
+  content: { padding: 16 },
+  row: { flexDirection: "row", paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#f3f4f6" },
+  label: { width: "35%", color: "#6b7280", fontWeight: "600", fontSize: 13, textTransform: "uppercase" },
+  value: { flex: 1, color: "#111827", fontSize: 14, fontWeight: "500" },
+  actions: { flexDirection: "row", marginTop: 20, gap: 12 },
+  editBtn: { flex: 1, flexDirection: "row", backgroundColor: "#6366f1", padding: 14, borderRadius: 12, alignItems: "center", justifyContent: "center", gap: 8 },
+  telegramBtn: { flex: 1, flexDirection: "row", padding: 14, borderRadius: 12, alignItems: "center", justifyContent: "center", gap: 8 },
+  btnText: { color: "#fff", fontWeight: "600", fontSize: 14 },
 });

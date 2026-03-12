@@ -2,11 +2,11 @@ import Input from "@/components/Input";
 import PhoneInput from "@/components/PhoneInput";
 import Select from "@/components/Select";
 import { auth } from "@/firebase/firebase";
-import db, { database, subDistricts, where } from "@/services/database";
+import db, { database, where } from "@/services/database";
 import { formatPhone } from "@/utils/format";
 import { Customer, District } from "@interfaces/index";
 import { useRouter } from "expo-router";
-import { collection } from "firebase/firestore";
+import { collection, query } from "firebase/firestore";
 import React, { useMemo, useState } from "react";
 import {
   useCollectionData,
@@ -44,34 +44,28 @@ const CustomerForm = ({
     initialData?.region_name || null,
   );
 
-  // ─── Regions: snapshot orqali doc.id ni olamiz ──────────────────────────────
-  // useCollectionDataOnce region nomini qaytaradi, lekin document ID ni bermaydi.
-  // useCollectionOnce esa snapshot.docs dan doc.id ni o'qishga imkon beradi.
-  // Bu muhim: selectedRegionId = "fargona" (doc ID) bo'lishi kerak,
-  // aks holda subDistricts.ref("Farg'ona") → regions/Farg'ona/districts (noto'g'ri path!)
-  const [regionsSnap] = useCollectionOnce(
-    collection(database, "regions") as any,
-  );
+  // ─── Regions ──────────────────────────────────────────────────────────────
+  const [regionsSnap] = useCollectionOnce(collection(database, "regions") as any);
 
-  // ─── Districts: region tanlanganda subcollection dan real-time yuklanadi ───
-  // useCollectionData — query o'zgarganda avtomatik qayta subscribe bo'ladi
+  // ─── Districts (Flat collection query) ────────────────────────────────────
   const districtsQuery = useMemo(
-    () => (selectedRegionId ? subDistricts.ref(selectedRegionId) : null),
+    () =>
+      selectedRegionId
+        ? query(collection(database, "districts"), where("regionId", "==", selectedRegionId))
+        : null,
     [selectedRegionId],
   );
   const [districtsData] = useCollectionData<District>(districtsQuery as any, {
     initialValue: [],
   });
 
-  // ─── Orders: snapshot → doc.id ni value sifatida ishlatamiz ────────────────
-  // useCollectionData id bermaydi → hamma order value:'' → tanlaganda hamma tanlanadi!
-  const [ordersSnap] = useCollectionOnce(collection(database, "orders") as any);
+  // ─── Lots (Partiyalar) ────────────────────────────────────────────────────
+  const [lotsSnap] = useCollectionOnce(collection(database, "lots") as any);
 
-  // ─── Tags: snapshot → doc.id ─────────────────────────────────────────────
+  // ─── Tags ─────────────────────────────────────────────────────────────────
   const [tagsSnap] = useCollectionOnce(collection(database, "tags") as any);
 
-  // ─── Select uchun formatlangan ro'yxatlar ─────────────────────────────────
-  // Region: label = doc.name, value = doc.id ("fargona", "andijon", ...)
+  // ─── Select options ───────────────────────────────────────────────────────
   const regions = useMemo(
     () =>
       (regionsSnap?.docs ?? []).map((d) => ({
@@ -80,18 +74,21 @@ const CustomerForm = ({
       })),
     [regionsSnap],
   );
+
   const districts = useMemo(
     () => (districtsData ?? []).map((d) => ({ label: d.name, value: d.name })),
     [districtsData],
   );
-  const orders = useMemo(
+
+  const lots = useMemo(
     () =>
-      (ordersSnap?.docs ?? []).map((d) => ({
+      (lotsSnap?.docs ?? []).map((d) => ({
         label: d.data().name as string,
         value: d.id,
       })),
-    [ordersSnap],
+    [lotsSnap],
   );
+
   const tags = useMemo(
     () =>
       (tagsSnap?.docs ?? []).map((d) => ({
@@ -152,15 +149,16 @@ const CustomerForm = ({
         return;
       }
 
+      const userId = initialData?.user_id || auth.currentUser?.uid || "";
       if (initialData?.id) {
         await db.customers.update(initialData.id, {
           ...cleanedData,
-          user_id: cleanedData.user_id || auth.currentUser?.uid || "",
+          user_id: userId,
         });
         if (onSuccess) {
           onSuccess(initialData.id, cleanedData);
         } else {
-          Alert.alert("Mijoz yangilandi");
+          Alert.alert("Muvaffaqiyat", "Mijoz yangilandi");
         }
       } else {
         const newId = await db.customers.create({
@@ -170,7 +168,7 @@ const CustomerForm = ({
         if (onSuccess) {
           onSuccess(newId, cleanedData);
         } else {
-          Alert.alert("Mijoz yaratildi");
+          Alert.alert("Muvaffaqiyat", "Mijoz yaratildi");
         }
       }
     } catch (error) {
@@ -234,7 +232,7 @@ const CustomerForm = ({
             )}
           />
           {errors.phone && (
-            <Text style={styles.errorText}>{errors.phone.message}</Text>
+            <Text style={styles.errorText}>{errors.phone.message as string}</Text>
           )}
         </View>
 
@@ -250,7 +248,6 @@ const CustomerForm = ({
             render={({ field: { onChange, value } }) => (
               <Select
                 data={regions}
-                name="region_name"
                 placeholder="Viloyatni tanlang"
                 searchPlaceholder="Qidirish..."
                 value={value}
@@ -266,7 +263,7 @@ const CustomerForm = ({
             )}
           />
           {errors.region_name && (
-            <Text style={styles.errorText}>{errors.region_name.message}</Text>
+            <Text style={styles.errorText}>{errors.region_name.message as string}</Text>
           )}
         </View>
 
@@ -278,9 +275,7 @@ const CustomerForm = ({
             name="district_name"
             render={({ field: { onChange, value } }) => (
               <Select
-                name="district_name"
                 data={districts}
-                errors={errors}
                 placeholder="Tumanni tanlang"
                 searchPlaceholder="Qidirish..."
                 search={true}
@@ -288,31 +283,28 @@ const CustomerForm = ({
                 value={value}
                 onChange={(val) => {
                   onChange(val);
-                  setValue("district_name", val as string);
                 }}
               />
             )}
           />
         </View>
 
-        {/* Orders */}
+        {/* Lots (Partiyalar) */}
         {!hideOrders && (
           <View style={styles.fieldGroup}>
-            <Text style={styles.label}>Buyurtmalar</Text>
+            <Text style={styles.label}>Partiyalar</Text>
             <Controller
               control={control}
-              name="order_ids"
+              name="order_ids" // Hamon order_ids nomida saqlaymiz DB muvofiqligi uchun
               render={({ field: { onChange, value } }) => (
                 <Select
-                  name="order_ids"
-                  data={orders}
-                  errors={errors}
-                  placeholder="Buyurtmalar"
+                  data={lots}
+                  placeholder="Partiyalar"
                   searchPlaceholder="Qidirish..."
                   maxHeight={300}
                   value={value}
                   multiSelect={true}
-                  onChange={(val) => {
+                  onChange={(val: string[]) => {
                     onChange(val);
                   }}
                 />
@@ -329,15 +321,13 @@ const CustomerForm = ({
             name="tag_ids"
             render={({ field: { onChange, value } }) => (
               <Select
-                name="tag_ids"
                 data={tags}
-                errors={errors}
                 placeholder="Taglar"
                 searchPlaceholder="Qidirish..."
                 maxHeight={300}
                 value={value}
                 multiSelect={true}
-                onChange={(val) => {
+                onChange={(val: string[]) => {
                   onChange(val);
                 }}
               />
@@ -351,27 +341,18 @@ const CustomerForm = ({
           <Controller
             control={control}
             name="rates"
-            rules={{
-              min: { value: 0, message: "Minimal 0" },
-            }}
             render={({ field: { onChange, value } }) => (
               <Rating
                 type="star"
                 ratingCount={10}
                 imageSize={32}
                 showRating={false}
-                ratingBackgroundColor="red"
-                startingValue={0}
-                style={{
-                  marginRight: "auto",
-                }}
+                startingValue={value || 0}
+                style={{ marginRight: "auto" }}
                 onFinishRating={onChange}
               />
             )}
           />
-          {errors.rates && (
-            <Text style={styles.errorText}>{errors.rates.message}</Text>
-          )}
         </View>
 
         {/* Telegram ID */}
@@ -411,8 +392,7 @@ const CustomerForm = ({
           />
         </View>
 
-        {/* Save button (bottom) */}
-        <View style={{ flexDirection: "row", gap: 8 }}>
+        <View style={{ flexDirection: "row", gap: 8, marginTop: 16 }}>
           {onCancel && (
             <Pressable
               style={[styles.saveBtn, { flex: 1, backgroundColor: "#f3f4f6" }]}
@@ -438,12 +418,7 @@ const CustomerForm = ({
 export default CustomerForm;
 
 const styles = StyleSheet.create({
-  headerBtn: {
-    paddingHorizontal: 12,
-  },
-  fieldGroup: {
-    marginBottom: 16,
-  },
+  fieldGroup: { marginBottom: 16 },
   label: {
     fontSize: 13,
     fontWeight: "600",
@@ -452,37 +427,13 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
-  input: {
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    color: "#111827",
-    backgroundColor: "#fff",
-  },
-  inputError: {
-    borderColor: "#ef4444",
-  },
-  errorText: {
-    marginTop: 4,
-    fontSize: 12,
-    color: "#ef4444",
-  },
-  errorLabel: {
-    color: "#ef4444",
-  },
+  errorText: { marginTop: 4, fontSize: 12, color: "#ef4444" },
+  errorLabel: { color: "#ef4444" },
   saveBtn: {
-    marginTop: 8,
     backgroundColor: "#6366f1",
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: "center",
   },
-  saveBtnText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "700",
-  },
+  saveBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
 });

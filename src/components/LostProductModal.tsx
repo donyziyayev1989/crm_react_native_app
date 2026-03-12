@@ -1,5 +1,5 @@
-import { LostProduct, Order } from "@/interfaces";
-import db, { subLostProducts } from "@/services/database";
+import { LostProduct, ProductLot } from "@/interfaces";
+import db from "@/services/database";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
@@ -16,8 +16,8 @@ import CustomModal from "./CustomModal";
 interface LostProductModalProps {
   visible: boolean;
   onClose: () => void;
-  orderId: string;
-  order: (Order & { id: string }) | null;
+  lotId: string;
+  lot: (ProductLot & { id: string }) | null;
   onSuccess?: (
     newLostProduct: LostProduct & { id: string },
     newTotal: number,
@@ -27,8 +27,8 @@ interface LostProductModalProps {
 const LostProductModal: React.FC<LostProductModalProps> = ({
   visible,
   onClose,
-  orderId,
-  order,
+  lotId,
+  lot,
   onSuccess,
 }) => {
   const [lostForm, setLostForm] = useState({
@@ -45,16 +45,17 @@ const LostProductModal: React.FC<LostProductModalProps> = ({
     setSavingLost(true);
     try {
       const countNum = Number(lostForm.count);
-      const newLostData = {
+      const newLostData: Omit<LostProduct, "id"> = {
+        lotId: lotId,
         count: countNum,
         date: lostForm.date,
         timestamp: Date.now(),
       };
-      const newId = await subLostProducts.create(orderId, newLostData);
+      const newId = await db.lost_products.create(newLostData);
 
-      // Update total parent order
-      const newLostTotal = (order?.lost_products || 0) + countNum;
-      await db.orders.update(orderId, {
+      // Partiyadagi umumiy yo'qotishlarni yangilash
+      const newLostTotal = (lot?.lost_products || 0) + countNum;
+      await db.lots.update(lotId, {
         lost_products: newLostTotal,
       });
 
@@ -81,15 +82,12 @@ const LostProductModal: React.FC<LostProductModalProps> = ({
       <View className="flex-row mb-3 items-center gap-2">
         <Text className="text-gray-600">Jami yo'qotishlar:</Text>
         <Text className="text-xl font-bold text-red-500">
-          {order?.lost_products || 0} dona
+          {lot?.lost_products || 0} dona
         </Text>
         <Text className="ms-2 text-gray-500">
           ({" "}
-          {order?.product_count
-            ? (
-                ((order.lost_products || 0) * 100) /
-                order.product_count
-              ).toFixed(1)
+          {lot?.product_count
+            ? (((lot.lost_products || 0) * 100) / lot.product_count).toFixed(1)
             : 0}{" "}
           % )
         </Text>

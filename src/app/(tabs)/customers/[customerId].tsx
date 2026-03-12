@@ -1,11 +1,10 @@
 import Card from "@/components/Card";
-import OrderLineCard from "@/components/OrderLineCard";
-import OrderLineModal from "@/components/OrderLineModal";
-import db, { database } from "@/services/database";
+import OrderCard from "@/components/OrderCard";
+import OrderModal from "@/components/OrderModal";
+import db, { where } from "@/services/database";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { Customer, OrderLine } from "@interfaces/index";
+import { Customer, Order } from "@interfaces/index";
 import { router, Stack, useLocalSearchParams } from "expo-router";
-import { collectionGroup, getDocs, query, where } from "firebase/firestore";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -19,14 +18,12 @@ import {
 const CustomerDetail = () => {
   const { customerId } = useLocalSearchParams<{ customerId: string }>();
   const [customer, setCustomer] = useState<Customer | null>(null);
-  const [orderLines, setOrderLines] = useState<
-    (OrderLine & { id: string; orderId: string })[]
-  >([]);
+  const [orders, setOrders] = useState<(Order & { id: string })[]>([]);
   const [productsMap, setProductsMap] = useState<
     Record<string, { name: string; price: number }>
   >({});
   const [usersMap, setUsersMap] = useState<Record<string, string>>({});
-  const [ordersMap, setOrdersMap] = useState<Record<string, string>>({});
+  const [lotsMap, setLotsMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [addLineModal, setAddLineModal] = useState(false);
 
@@ -35,19 +32,12 @@ const CustomerDetail = () => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        // 1. collectionGroup query — barcha orders/*/order_lines ichidan
-        //    customer_id bo'yicha bitta so'rovda topadi
-        const q = query(
-          collectionGroup(database, "order_lines"),
-          where("customer_id", "==", customerId),
-        );
-
-        const [customerData, productsData, usersData, linesSnapshot] =
+        const [customerData, productsData, usersData, ordersData] =
           await Promise.all([
             db.customers.get(customerId),
             db.products.list(),
             db.users.list(),
-            getDocs(q),
+            db.orders.list(where("customer_id", "==", customerId)),
           ]);
 
         if (!customerData) {
@@ -55,20 +45,15 @@ const CustomerDetail = () => {
           return;
         }
         setCustomer(customerData);
-        // 2. Order line larni map qilamiz (orderId ni parent path dan olamiz)
-        const customerLines = linesSnapshot.docs.map((d) => {
-          const orderId = d.ref.parent.parent?.id ?? "";
-          return { id: d.id, orderId, ...d.data() } as OrderLine & {
-            id: string;
-            orderId: string;
-          };
-        });
+
         // Sanasi bo'yicha kamayish tartibida saralash
-        customerLines.sort(
+        const sortedOrders = ordersData as (Order & { id: string })[];
+        sortedOrders.sort(
           (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
         );
-        setOrderLines(customerLines);
-        // 3. Mahsulotlar map
+        setOrders(sortedOrders);
+
+        // Mahsulotlar map
         const pMap: Record<string, { name: string; price: number }> = {};
         productsData.forEach((p) => {
           if (p.id) {
@@ -77,25 +62,25 @@ const CustomerDetail = () => {
         });
         setProductsMap(pMap);
 
-        // 3.1 Users map
+        // Users map
         const uMap: Record<string, string> = {};
         usersData.forEach((u) => {
           if (u.id) uMap[u.id] = u.name;
         });
         setUsersMap(uMap);
 
-        // 4. Faqat kerakli orderlar nomlarini olamiz
-        const uniqueOrderIds = [
-          ...new Set(customerLines.map((l) => l.orderId)),
-        ];
-        const orders = await Promise.all(
-          uniqueOrderIds.map((id) => db.orders.get(id)),
+        // Partiyalar (Lots) nomlarini olamiz
+        const uniqueLotIds = [
+          ...new Set(sortedOrders.map((o) => o.lotId).filter(Boolean)),
+        ] as string[];
+        const lots = await Promise.all(
+          uniqueLotIds.map((id) => db.lots.get(id)),
         );
-        const oMap: Record<string, string> = {};
-        orders.forEach((o) => {
-          if (o?.id) oMap[o.id] = o.name;
+        const lMap: Record<string, string> = {};
+        lots.forEach((l) => {
+          if (l?.id) lMap[l.id] = l.name;
         });
-        setOrdersMap(oMap);
+        setLotsMap(lMap);
       } catch (error) {
         console.error("Error fetching customer detail data:", error);
       } finally {
@@ -166,7 +151,7 @@ const CustomerDetail = () => {
               <Text style={styles.value}>{customer.telegram_id}</Text>
             </View>
           ) : null}
-          {customer.location ? (
+          {customer.location && (
             <View style={styles.row}>
               <Text style={styles.label}>Lokatsiya:</Text>
               <Pressable
@@ -175,12 +160,14 @@ const CustomerDetail = () => {
                   require("react-native").Linking.openURL(url);
                 }}
               >
-                <Text style={[styles.value, { color: "#6366f1", fontWeight: "700" }]}>
+                <Text
+                  style={[styles.value, { color: "#6366f1", fontWeight: "700" }]}
+                >
                   Xaritada ko'rish
                 </Text>
               </Pressable>
             </View>
-          ) : null}
+          )}
           {customer.note ? (
             <View style={styles.row}>
               <Text style={styles.label}>Izoh:</Text>
@@ -189,7 +176,7 @@ const CustomerDetail = () => {
           ) : null}
         </Card>
 
-        {/* Order lines */}
+        {/* Orders List */}
         <View style={styles.section}>
           <View className="flex-row items-center justify-between mb-2 px-1">
             <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>
@@ -202,15 +189,14 @@ const CustomerDetail = () => {
               <MaterialIcons name="add" size={20} color="#6366f1" />
             </Pressable>
           </View>
-          {orderLines.length === 0 ? (
+          {orders.length === 0 ? (
             <Text style={styles.emptyText}>Xaridlar mavjud emas</Text>
           ) : (
-            orderLines.map((line) => (
+            orders.map((line) => (
               <View key={line.id} style={styles.lineCard}>
-                <OrderLineCard
+                <OrderCard
                   item={line}
-                  title={ordersMap[line.orderId] || "Noma'lum buyurtma"}
-                  topIconName="assignment"
+                  title={lotsMap[line.lotId || ""] || "Partiya aniqlanmadi"}
                   productName={
                     productsMap[line.product_id]?.name || "Noma'lum mahsulot"
                   }
@@ -221,35 +207,30 @@ const CustomerDetail = () => {
           )}
         </View>
 
-        <OrderLineModal
+        <OrderModal
           visible={addLineModal}
           onClose={() => setAddLineModal(false)}
-          onSuccess={async (line: any, isEdit: boolean) => {
-            const extendedLine = {
-              ...line,
-              orderId: line.orderId || "",
-            };
-
-            if (extendedLine.orderId && !ordersMap[extendedLine.orderId]) {
+          onSuccess={async (order: any, isEdit: boolean) => {
+            if (order.lotId && !lotsMap[order.lotId]) {
               try {
-                const orderData = await db.orders.get(extendedLine.orderId);
-                if (orderData?.name) {
-                  setOrdersMap((prev) => ({
+                const lotData = await db.lots.get(order.lotId);
+                if (lotData?.name) {
+                  setLotsMap((prev) => ({
                     ...prev,
-                    [extendedLine.orderId]: orderData.name,
+                    [order.lotId]: lotData.name,
                   }));
                 }
               } catch (err) {
-                console.error("Failed to fetch order info", err);
+                console.error("Failed to fetch lot info", err);
               }
             }
 
             if (isEdit) {
-              setOrderLines((prev) =>
-                prev.map((l) => (l.id === line.id ? extendedLine : l)),
+              setOrders((prev) =>
+                prev.map((l) => (l.id === order.id ? order : l)),
               );
             } else {
-              setOrderLines((prev) => [extendedLine, ...prev]);
+              setOrders((prev) => [order, ...prev]);
             }
           }}
           initialCustomer={customer ? { ...customer, id: customerId } : null}
@@ -290,57 +271,4 @@ const styles = StyleSheet.create({
   lineCard: {
     marginBottom: 8,
   },
-  lineHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  orderName: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#111827",
-  },
-  lineInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    marginBottom: 8,
-  },
-  infoText: {
-    fontSize: 14,
-    color: "#4b5563",
-  },
-  lineFooter: {
-    borderTopWidth: 1,
-    borderTopColor: "#f3f4f6",
-    paddingTop: 8,
-    marginTop: 4,
-  },
-  priceInfo: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  priceText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#6366f1",
-  },
-  dateText: {
-    fontSize: 12,
-    color: "#9ca3af",
-  },
-  stateBadge: {
-    fontSize: 10,
-    fontWeight: "700",
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 12,
-    overflow: "hidden",
-  },
-  stateNew: { backgroundColor: "#dbeafe", color: "#1d4ed8" },
-  stateDone: { backgroundColor: "#dcfce7", color: "#15803d" },
-  stateCancel: { backgroundColor: "#fee2e2", color: "#b91c1c" },
-  stateReschedule: { backgroundColor: "#ffedd5", color: "#ea580c" },
 });

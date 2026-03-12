@@ -1,12 +1,8 @@
 import Card from "@/components/Card";
 import LostProductModal from "@/components/LostProductModal";
-import OrderLineModal from "@/components/OrderLineModal";
-import { LostProduct, Order, OrderLine } from "@/interfaces";
-import db, {
-  orderBy,
-  subLostProducts,
-  subOrderLines,
-} from "@/services/database";
+import OrderModal from "@/components/OrderModal";
+import { LostProduct, Order, ProductLot } from "@/interfaces";
+import db, { orderBy, where } from "@/services/database";
 import { formatDate, formatMoney } from "@/utils/format";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useLocalSearchParams } from "expo-router";
@@ -20,12 +16,14 @@ import {
   View,
 } from "react-native";
 
+/**
+ * OrderDashboard (Partiya Dashbordi)
+ * Partiyadagi barcha xaridlar va yo'qotishlar hisoboti
+ */
 const OrderDashboard = () => {
-  const { orderId } = useLocalSearchParams<{ orderId: string }>();
-  const [order, setOrder] = useState<(Order & { id: string }) | null>(null);
-  const [orderLines, setOrderLines] = useState<(OrderLine & { id: string })[]>(
-    [],
-  );
+  const { lotId } = useLocalSearchParams<{ lotId: string }>();
+  const [lot, setLot] = useState<(ProductLot & { id: string }) | null>(null);
+  const [orders, setOrders] = useState<(Order & { id: string })[]>([]);
   const [lostProducts, setLostProducts] = useState<
     (LostProduct & { id: string })[]
   >([]);
@@ -34,19 +32,20 @@ const OrderDashboard = () => {
   const [addLineModal, setAddLineModal] = useState(false);
 
   useEffect(() => {
-    if (!orderId) return;
+    if (!lotId) return;
     const fetchData = async () => {
       setLoading(true);
       try {
-        const [orderData, linesData, lostData, productsData] =
-          await Promise.all([
-            db.orders.get(orderId),
-            subOrderLines.list(orderId),
-            subLostProducts.list(orderId, orderBy("timestamp", "asc")),
-            db.products.list(),
-          ]);
-        setOrder(orderData as Order & { id: string });
-        setOrderLines(linesData as (OrderLine & { id: string })[]);
+        const [lotData, ordersData, lostData] = await Promise.all([
+          db.lots.get(lotId),
+          db.orders.list(where("lotId", "==", lotId)),
+          db.lost_products.list(
+            where("lotId", "==", lotId),
+            orderBy("timestamp", "asc"),
+          ),
+        ]);
+        setLot(lotData as ProductLot & { id: string });
+        setOrders(ordersData as (Order & { id: string })[]);
         setLostProducts(lostData as (LostProduct & { id: string })[]);
       } catch (e) {
         console.error(e);
@@ -55,7 +54,7 @@ const OrderDashboard = () => {
       }
     };
     fetchData();
-  }, [orderId]);
+  }, [lotId]);
 
   const stats = useMemo(() => {
     let totalCount = 0;
@@ -72,18 +71,18 @@ const OrderDashboard = () => {
       return 0;
     };
 
-    orderLines.forEach((line) => {
-      const pCount = parseNum(line.product_count);
-      const pPrice = parseNum(line.product_price);
+    orders.forEach((order) => {
+      const pCount = parseNum(order.product_count);
+      const pPrice = parseNum(order.product_price);
       const lineTotal = pCount * pPrice;
 
       totalCount += pCount;
       totalSum += lineTotal;
 
-      if (line.state === "done") {
+      if (order.state === "done") {
         doneCount += pCount;
         doneSum += lineTotal;
-      } else if (line.state === "cancel") {
+      } else if (order.state === "cancel") {
         cancelCount += pCount;
         cancelSum += lineTotal;
       }
@@ -100,7 +99,7 @@ const OrderDashboard = () => {
       cancelSum,
       lostCount,
     };
-  }, [orderLines, lostProducts]);
+  }, [orders, lostProducts]);
 
   if (loading) {
     return (
@@ -110,14 +109,14 @@ const OrderDashboard = () => {
     );
   }
 
-  const handleLineSuccess = (
-    line: OrderLine & { id: string },
+  const handleOrderSuccess = (
+    order: Order & { id: string },
     isEdit: boolean,
   ) => {
     if (isEdit) {
-      setOrderLines((prev) => prev.map((l) => (l.id === line.id ? line : l)));
+      setOrders((prev) => prev.map((l) => (l.id === order.id ? order : l)));
     } else {
-      setOrderLines((prev) => [...prev, line]);
+      setOrders((prev) => [...prev, order]);
     }
   };
 
@@ -168,6 +167,7 @@ const OrderDashboard = () => {
           </Card>
         </View>
       </View>
+
       {/* ── Yo'qotilgan tovarlar jadvali ── */}
       <Card className="mb-4">
         <View className="flex-row justify-between items-center mb-3">
@@ -223,7 +223,7 @@ const OrderDashboard = () => {
         )}
       </Card>
 
-      {/* ── Buyurtmalar (OrderLines) jadvali ── */}
+      {/* ── Buyurtmalar jadvali ── */}
       <Card className="overflow-x-auto min-w-[360px]">
         <View className="flex-row justify-between items-center mb-3">
           <Text style={[styles.cardTitle, { marginBottom: 0 }]}>
@@ -236,9 +236,9 @@ const OrderDashboard = () => {
             <MaterialIcons name="add" size={20} color="#6366f1" />
           </Pressable>
         </View>
-        {orderLines.length === 0 ? (
+        {orders.length === 0 ? (
           <Text style={styles.emptyText}>
-            Buyurtmaga tegishli tovarlar mavjud emas.
+            Partiyaga tegishli buyurtmalar mavjud emas.
           </Text>
         ) : (
           <View style={styles.table}>
@@ -264,17 +264,16 @@ const OrderDashboard = () => {
                 Status
               </Text>
             </View>
-            {orderLines.map((line, index) => (
+            {orders.map((order, index) => (
               <View
-                key={line.id}
+                key={order.id}
                 style={[
                   styles.tableRow,
-                  index === orderLines.length - 1 && { borderBottomWidth: 0 },
+                  index === orders.length - 1 && { borderBottomWidth: 0 },
                 ]}
               >
                 <Text style={{ width: 24 }} numberOfLines={2}>
                   {index + 1}
-                  {/* {getProductName(line.product_id)} */}
                 </Text>
                 <Text
                   style={[
@@ -283,7 +282,7 @@ const OrderDashboard = () => {
                   ]}
                   numberOfLines={1}
                 >
-                  {line.region_name}
+                  {order.region_name}
                 </Text>
                 <Text
                   style={[
@@ -291,10 +290,10 @@ const OrderDashboard = () => {
                     { flex: 1, textAlign: "center", fontWeight: "600" },
                   ]}
                 >
-                  {line.product_count}
+                  {order.product_count}
                 </Text>
                 <Text style={[styles.cell, { flex: 1.5, textAlign: "right" }]}>
-                  {formatMoney(line.product_price)}
+                  {formatMoney(order.product_price)}
                 </Text>
                 <Text
                   style={[
@@ -302,7 +301,7 @@ const OrderDashboard = () => {
                     { flex: 1.5, textAlign: "right", color: "#6b7280" },
                   ]}
                 >
-                  {formatMoney(line.delivery_price)}
+                  {formatMoney(order.delivery_price)}
                 </Text>
                 <Text
                   style={[
@@ -310,21 +309,21 @@ const OrderDashboard = () => {
                     { flex: 1.5, textAlign: "right", color: "#6b7280" },
                   ]}
                 >
-                  {line.state === "new" ? (
+                  {order.state === "new" ? (
                     <MaterialIcons
                       name="add-circle"
                       size={20}
                       color="#6366f1"
                     />
-                  ) : line.state === "done" ? (
+                  ) : order.state === "done" ? (
                     <MaterialIcons
                       name="check-circle"
                       size={20}
                       color="#28a745"
                     />
-                  ) : line.state === "cancel" ? (
+                  ) : order.state === "cancel" ? (
                     <MaterialIcons name="cancel" size={20} color="#ef4444" />
-                  ) : line.state === "reschedule" ? (
+                  ) : order.state === "reschedule" ? (
                     <MaterialIcons name="update" size={20} color="#ffc107" />
                   ) : null}
                 </Text>
@@ -339,11 +338,11 @@ const OrderDashboard = () => {
       <LostProductModal
         visible={addLostModal}
         onClose={() => setAddLostModal(false)}
-        orderId={orderId as string}
-        order={order}
+        lotId={lotId as string}
+        lot={lot}
         onSuccess={(newLost, newTotal) => {
-          if (order) {
-            setOrder({ ...order, lost_products: newTotal });
+          if (lot) {
+            setLot({ ...lot, lost_products: newTotal });
           }
           setLostProducts((prev) =>
             [...prev, newLost].sort((a, b) => a.timestamp - b.timestamp),
@@ -351,11 +350,11 @@ const OrderDashboard = () => {
         }}
       />
 
-      <OrderLineModal
+      <OrderModal
         visible={addLineModal}
         onClose={() => setAddLineModal(false)}
-        orderId={orderId as string}
-        onSuccess={handleLineSuccess}
+        lotId={lotId as string}
+        onSuccess={handleOrderSuccess}
       />
     </ScrollView>
   );
@@ -367,12 +366,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f3f4f6" },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   content: { padding: 16 },
-  title: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#111827",
-    marginBottom: 16,
-  },
   cardTitle: {
     fontSize: 16,
     fontWeight: "700",
@@ -414,8 +407,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     alignItems: "center",
   },
-  cell: {
-    fontSize: 13,
-    color: "#111827",
-  },
+  cell: { fontSize: 13, color: "#111827" },
 });

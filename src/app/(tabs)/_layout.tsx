@@ -1,4 +1,4 @@
-import OrderLineModal from "@/components/OrderLineModal";
+import OrderModal from "@/components/OrderModal";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Tabs } from "expo-router";
 import { useState } from "react";
@@ -16,7 +16,14 @@ export default function TabLayout() {
           tabBarStyle: {
             backgroundColor: "#fff",
             borderTopWidth: 0,
-            elevation: 0,
+            elevation: 10,
+            shadowColor: "#ccc",
+            shadowOffset: {
+              width: 0,
+              height: -4,
+            },
+            shadowOpacity: 0.1,
+            shadowRadius: 5,
           },
           tabBarLabelStyle: {
             fontSize: 12,
@@ -33,18 +40,19 @@ export default function TabLayout() {
             ),
           }}
         />
+
         <Tabs.Screen
           name="orders"
           options={{
-            title: "Buyurtmalar",
+            title: "Xaridlar",
             headerShown: false,
             tabBarIcon: ({ color, size }) => (
-              <MaterialIcons name="shopping-cart" size={size} color={color} />
+              <MaterialIcons name="assignment" size={size} color={color} />
             ),
           }}
         />
         <Tabs.Screen
-          name="add"
+          name="addOrder"
           options={{
             title: "",
             tabBarIcon: () => (
@@ -76,17 +84,39 @@ export default function TabLayout() {
           }}
         />
         <Tabs.Screen
+          name="lots"
+          options={{
+            title: "Partiyalar",
+            headerShown: false,
+            tabBarIcon: ({ color, size }) => (
+              <MaterialIcons name="shopping-cart" size={size} color={color} />
+            ),
+          }}
+        />
+        <Tabs.Screen
           name="profile"
           options={{
             title: "Profile",
+            href: null,
             tabBarIcon: ({ color, size }) => (
               <MaterialIcons name="person" size={size} color={color} />
             ),
           }}
         />
+        <Tabs.Screen
+          name="leads"
+          options={{
+            title: "Leadlar",
+            headerShown: false,
+            href: null,
+            tabBarIcon: ({ color, size }) => (
+              <MaterialIcons name="home" size={size} color={color} />
+            ),
+          }}
+        />
       </Tabs>
 
-      <OrderLineModal
+      <OrderModal
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
       />

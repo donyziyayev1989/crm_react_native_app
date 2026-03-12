@@ -1,24 +1,28 @@
-import OrderForm from "@/components/OrderForm";
-import { Order } from "@/interfaces";
+import ProductLotForm from "@/components/ProductLotForm";
+import OrderForm from "@/components/ProductLotForm";
+import { ProductLot } from "@/interfaces";
 import db from "@/services/database";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 
-const EditOrder = () => {
-  const { orderId } = useLocalSearchParams<{ orderId: string }>();
+/**
+ * EditLot (Partiyani tahrirlash)
+ */
+const EditLot = () => {
+  const { lotId } = useLocalSearchParams<{ lotId: string }>();
   const router = useRouter();
-  const [order, setOrder] = useState<Order | null>(null);
+  const [lot, setLot] = useState<ProductLot | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (orderId) {
-      db.orders.get(orderId).then((data) => {
-        setOrder(data as Order);
+    if (lotId) {
+      db.lots.get(lotId).then((data) => {
+        setLot(data as ProductLot);
         setLoading(false);
       });
     }
-  }, [orderId]);
+  }, [lotId]);
 
   if (loading) {
     return (
@@ -30,10 +34,10 @@ const EditOrder = () => {
 
   return (
     <View style={{ flex: 1, backgroundColor: "#fff" }}>
-      <Stack.Screen options={{ title: "Buyurtmani tahrirlash" }} />
-      {order && (
-        <OrderForm
-          initialData={order}
+      <Stack.Screen options={{ title: "Partiyani tahrirlash" }} />
+      {lot && (
+        <ProductLotForm
+          initialData={lot}
           onSuccess={() => router.back()}
           onCancel={() => router.back()}
         />
@@ -51,4 +55,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default EditOrder;
+export default EditLot;

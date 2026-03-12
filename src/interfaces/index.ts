@@ -1,11 +1,17 @@
 // ─── CRM Entity Interfaces ────────────────────────────────────────────────────
 // Diagramma: https://drawsql.app/teams/summer-3/diagrams/crm
 //
-// Firestore tuzilmasi:
-//   regions/{regionId}                    ← Region
-//   regions/{regionId}/districts/{id}     ← District (subcollection)
-//   orders/{orderId}                      ← Order
-//   orders/{orderId}/order_lines/{id}     ← OrderLine (subcollection)
+// Firestore tuzilmasi (Yassi / Flat Architecture):
+//   regions/{id}                          ← Region
+//   districts/{id}                        ← District (has regionId ref)
+//   lots/{id}                             ← ProductLot (Partiya)
+//   orders/{id}                           ← Order (Buyurtma, has lotId ref)
+//   lost_products/{id}                    ← LostProduct (has lotId ref)
+//   customers/{id}                        ← Customer
+//   products/{id}                         ← Product
+//   users/{id}                            ← User (Auth UID)
+//   tags/{id}                             ← Tag
+//   rates/{id}                            ← Rate
 
 export interface User {
   id?: string; // Firebase Auth UID
@@ -15,7 +21,7 @@ export interface User {
   role?: string;
 }
 
-export interface Order {
+export interface ProductLot {
   id?: string;
   name: string;
   date: string; // ISO date string
@@ -25,6 +31,7 @@ export interface Order {
 
 export interface LostProduct {
   id?: string;
+  lotId: string; // ref → lots
   count: number;
   date: string;
   timestamp: number;
@@ -44,18 +51,12 @@ export interface Region {
 export interface District {
   id?: string;
   name: string;
-  // region_id endi Firestore path orqali belgilanadi:
-  // regions/{regionId}/districts/{districtId}
-  // Qulaylik uchun regionId ni ham saqlaymiz
-  regionId?: string;
+  regionId: string; // ref → regions
 }
 
-export interface OrderLine {
+export interface Order {
   id?: string;
-  // order_id endi Firestore path orqali belgilanadi:
-  // orders/{orderId}/order_lines/{id}
-  // Qulaylik uchun orderId ni ham saqlaymiz
-  orderId?: string;
+  lotId: string; // ref → lots
   customer_id: string; // ref → customers
   product_id: string; // ref → products
   product_count: number;
@@ -79,7 +80,7 @@ export interface Customer {
   tag_ids: string[]; // ref → tags
   note: string;
   rates: number;
-  order_ids: string[]; // ref → orders
+  order_ids: string[]; // ref → lots/orders (historical)
   location?: {
     lat: number;
     lng: number;
@@ -96,6 +97,36 @@ export interface Rate {
   id?: string;
   name: string;
   rate: number;
+}
+
+export interface Lead {
+  id?: string;
+  name: string;
+  phone: string;
+  telegram_id: string;
+  product_count: number;
+  location?: {
+    lat: number;
+    lng: number;
+  };
+  date: string; // ISO date string
+  state: "new" | "confirmed" | "rejected" | "pending";
+  note?: string;
+}
+
+export interface LeadChat {
+  id?: string; // Обычно совпадает с lead_id
+  lead_id: string;
+  last_message?: string;
+  last_timestamp?: string;
+  unread_count?: number;
+}
+
+export interface LeadMessage {
+  id?: string;
+  text: string;
+  sender: "operator" | "customer";
+  timestamp: string; // ISO string
 }
 
 export interface InputProps {

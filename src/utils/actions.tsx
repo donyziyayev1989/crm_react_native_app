@@ -1,8 +1,11 @@
 import { Alert, Linking, Platform } from "react-native";
 
-
 export const callPhone = async (phone: string) => {
-  const url = `tel:${phone}`;
+  let cleaned = phone.replace(/\D/g, "");
+  if (!cleaned.startsWith("+")) {
+    cleaned = "+" + cleaned;
+  }
+  const url = `tel:${cleaned}`;
 
   if (Platform.OS === "web") {
     window.location.href = url;
@@ -16,17 +19,72 @@ export const callPhone = async (phone: string) => {
   }
 };
 
-export const openTelegram = async (username: string) => {
-  const url = `https://t.me/${username}`;
+const BOT_TOKEN = process.env.EXPO_PUBLIC_BOT_TOKEN;
 
-  if (Platform.OS === "web") {
-    window.location.href = url;
+export const openTelegram = async (
+  identifier: string | number | undefined,
+  message: string = "Salom! Siz bilan CRM orqali bog'lanishmoqda.",
+) => {
+  if (!identifier) {
+    Alert.alert("Xatolik", "Telegram ma'lumotlari mavjud emas");
     return;
   }
 
+  const idStr = String(identifier).trim().replace("@", "");
+  const isNumeric = /^\d+$/.test(idStr);
+
   try {
-    await Linking.openURL(url);
-  } catch {
-    Alert.alert("Xatolik", "Telegram ochilmadi");
+    // 1. Agar foydalanuvchi ID bo'lsa (numeric va 998 bilan boshlanmasa)
+    if (isNumeric && !idStr.startsWith("998") && idStr.length > 7) {
+      if (!BOT_TOKEN) {
+        // Token yo'q bo'lsa, deep link orqali ochishga harakat qilamiz
+        const url = `tg://user?id=${idStr}`;
+        const supported = await Linking.canOpenURL(url);
+        if (supported) {
+          await Linking.openURL(url);
+        } else {
+          await Linking.openURL(`https://t.me/user?id=${idStr}`);
+        }
+        return;
+      }
+
+      // Bot orqali xabar yuborish (ID orqali bog'lanishning eng ishonchli yo'li)
+      const apiUrl = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+      const response = await fetch(apiUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: idStr, text: message }),
+      });
+
+      if (!response.ok) {
+        // Agar bot orqali xato bersa, deep linkni sinab ko'ramiz
+        await Linking.openURL(`tg://user?id=${idStr}`);
+      }
+      return;
+    }
+
+    // 2. Agar telefon raqami bo'lsa
+    if (isNumeric && (idStr.startsWith("998") || idStr.length <= 13)) {
+      const phone = idStr.startsWith("+") ? idStr : "+" + idStr;
+      const url = `https://t.me/${phone}`;
+
+      if (Platform.OS === "web") {
+        window.open(url, "_blank");
+      } else {
+        await Linking.openURL(url);
+      }
+      return;
+    }
+
+    // 3. Username bo'lsa
+    const url = `https://t.me/${idStr}`;
+    if (Platform.OS === "web") {
+      window.open(url, "_blank");
+    } else {
+      await Linking.openURL(url);
+    }
+  } catch (err) {
+    console.error("Telegram Open Error:", err);
+    Alert.alert("Xatolik", "Telegram bilan bog'lanishda xatolik yuz berdi");
   }
 };

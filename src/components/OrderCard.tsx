@@ -1,12 +1,12 @@
 import Card from "@/components/Card";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { OrderLine } from "@interfaces/index";
+import { Order } from "@interfaces/index";
 import { formatDate, formatMoney } from "@utils/format";
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
 
-export interface OrderLineCardProps {
-  item: OrderLine & { id: string };
+export interface OrderCardProps {
+  item: Order & { id: string };
   title: string;
   subtitle?: string;
   topIconName?: keyof typeof MaterialIcons.glyphMap;
@@ -14,7 +14,11 @@ export interface OrderLineCardProps {
   userName?: string;
 }
 
-const OrderLineCard: React.FC<OrderLineCardProps> = ({
+/**
+ * OrderCard (Buyurtma kartochkasi)
+ * Ilgari OrderLineCard deb atalgan.
+ */
+const OrderCard: React.FC<OrderCardProps> = ({
   item,
   title,
   subtitle,
@@ -24,7 +28,7 @@ const OrderLineCard: React.FC<OrderLineCardProps> = ({
 }) => {
   return (
     <Card>
-      {/* Hedear: Title and status */}
+      {/* Header: Title and status */}
       <View className="flex-row justify-between items-center mb-2">
         <View style={styles.infoItem}>
           <MaterialIcons name={topIconName} size={16} color="#6b7280" />
@@ -130,7 +134,7 @@ const OrderLineCard: React.FC<OrderLineCardProps> = ({
   );
 };
 
-export default OrderLineCard;
+export default OrderCard;
 
 const styles = StyleSheet.create({
   infoItem: { flexDirection: "row", alignItems: "center", gap: 4 },

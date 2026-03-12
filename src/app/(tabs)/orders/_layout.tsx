@@ -8,9 +8,9 @@ const Layout = () => {
       <Stack.Screen
         name="index"
         options={{
-          title: "Partiyalar",
+          title: "Buyurtmalar",
           headerRight: () => (
-            <Link href="/orders/addOrder" className="text-primary p-3">
+            <Link href="/lots/addLot" className="text-link p-3">
               <MaterialIcons name="add" size={24} color="#6366f1" />
             </Link>
           ),
@@ -20,22 +20,6 @@ const Layout = () => {
         name="[orderId]"
         options={{
           title: "Buyurtma tafsiloti",
-          headerRight: () => (
-            <Link href="/" className="text-danger p-3">
-              <MaterialIcons name="remove-circle-outline" size={24} />
-            </Link>
-          ),
-        }}
-      />
-      <Stack.Screen name="addOrder" options={{ title: "Yangi partiya" }} />
-      <Stack.Screen
-        name="edit/[orderId]"
-        options={{ title: "Partiyani tahrirlash" }}
-      />
-      <Stack.Screen
-        name="dashboard/[orderId]"
-        options={{
-          title: "Partiya Dashboard",
         }}
       />
     </Stack>

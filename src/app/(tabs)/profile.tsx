@@ -1,7 +1,6 @@
 import Card from "@/components/Card";
 import { auth, database } from "@/firebase/firebase";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import {
   GoogleAuthProvider,
   signInWithCredential,
@@ -14,6 +13,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -21,13 +21,36 @@ import {
   View,
 } from "react-native";
 
-GoogleSignin.configure({
-  webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || "",
-});
-
-const Profile = () => {
+export default function Profile() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Safe GoogleSignin access
+  const getGoogleSignin = () => {
+    try {
+      return require("@react-native-google-signin/google-signin").GoogleSignin;
+    } catch (e) {
+      return null;
+    }
+  };
+
+  useEffect(() => {
+    const initGoogle = async () => {
+      if (Platform.OS !== "web") {
+        try {
+          const GSignin = getGoogleSignin();
+          if (GSignin) {
+            GSignin.configure({
+              webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || "",
+            });
+          }
+        } catch (e) {
+          console.error("GoogleSignin init error:", e);
+        }
+      }
+    };
+    initGoogle();
+  }, []);
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((currentUser) => {
@@ -39,9 +62,24 @@ const Profile = () => {
 
   const signIn = async () => {
     try {
+      if (Platform.OS === "web") {
+        Alert.alert(
+          "Xato",
+          "Web versiyada Google orqali kirish hali qo'shilmagan",
+        );
+        return;
+      }
+
+      const GSignin = getGoogleSignin();
+      if (!GSignin) {
+        throw new Error(
+          "Google Sign-In moduli topilmadi. Ilovani qayta build qiling.",
+        );
+      }
+
       setLoading(true);
-      await GoogleSignin.hasPlayServices();
-      const userInfo = await GoogleSignin.signIn();
+      await GSignin.hasPlayServices();
+      const userInfo = await GSignin.signIn();
       const idToken = userInfo.data?.idToken;
 
       if (!idToken) throw new Error("No ID Token found");
@@ -78,7 +116,10 @@ const Profile = () => {
     try {
       setLoading(true);
       await signOut(auth);
-      await GoogleSignin.signOut();
+      const GSignin = getGoogleSignin();
+      if (Platform.OS !== "web" && GSignin) {
+        await GSignin.signOut();
+      }
     } catch (error: any) {
       console.error(error);
       Alert.alert("Xatolik", "Tizimdan chiqishda xatolik yuz berdi.");
@@ -140,9 +181,7 @@ const Profile = () => {
       )}
     </ScrollView>
   );
-};
-
-export default Profile;
+}
 
 const styles = StyleSheet.create({
   container: { padding: 16, flexGrow: 1, backgroundColor: "#f9fafb" },

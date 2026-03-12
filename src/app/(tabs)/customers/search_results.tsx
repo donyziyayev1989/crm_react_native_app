@@ -6,11 +6,11 @@ import React, { useEffect, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
 
 const SearchResults = () => {
-  const { q, order, region, orderName } = useLocalSearchParams<{
+  const { q, lotId, region, lotName } = useLocalSearchParams<{
     q?: string;
-    order?: string;
+    lotId?: string;
     region?: string;
-    orderName?: string;
+    lotName?: string;
   }>();
   const [results, setResults] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(false);
@@ -29,9 +29,9 @@ const SearchResults = () => {
           }
         }
 
-        // Buyurtma turi bo'yicha filter (order_ids array-contains)
-        if (order && order !== "") {
-          constraints.push(where("order_ids", "array-contains", order));
+        // Partiya bo'yicha filter (order_ids array-contains)
+        if (lotId && lotId !== "") {
+          constraints.push(where("order_ids", "array-contains", lotId));
         }
 
         // Viloyat bo'yicha filter
@@ -51,7 +51,7 @@ const SearchResults = () => {
     };
 
     performSearch();
-  }, [q, order, region]);
+  }, [q, lotId, region]);
 
   if (loading) {
     return (
@@ -66,7 +66,7 @@ const SearchResults = () => {
       <Stack.Screen
         options={{
           title:
-            `Qidiruv: ${(orderName && orderName + ",") || ""} ${(region && region + ",") || ""} ${q ? `"${q}"` : ""}`
+            `Qidiruv: ${(lotName && lotName + ",") || ""} ${(region && region + ",") || ""} ${q ? `"${q}"` : ""}`
               .trim()
               .replace(/\s+/g, " "),
         }}

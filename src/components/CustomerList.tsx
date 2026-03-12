@@ -106,7 +106,7 @@ const CustomerList = ({ data }: { data: Customer[] }) => {
         data={listData}
         contentContainerStyle={{ padding: 8, gap: 8 }}
         renderItem={({ item }) => (
-          <View className="bg-white rounded-2xl overflow-hidden">
+          <View className="bg-white rounded-2xl overflow-hidden shadow-sm shadow-slate-400/30">
             <ReanimatedSwipeable
               ref={
                 ((ref: any) => {

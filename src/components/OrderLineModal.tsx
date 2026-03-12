@@ -1,6 +1,6 @@
 import { auth } from "@/firebase/firebase";
-import { Customer, Order, OrderLine, Product, Region } from "@/interfaces";
-import db, { orderBy, subOrderLines } from "@/services/database";
+import { Customer, Order, Product, ProductLot, Region } from "@/interfaces";
+import db, { orderBy } from "@/services/database";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useEffect, useMemo, useState } from "react";
 import {
@@ -18,9 +18,13 @@ import CustomModal from "./CustomModal";
 import CustomerForm from "./CustomerForm";
 import Select from "./Select";
 
-// Order Line Form State
+/**
+ * OrderLineModal (hozirgi nomi, lekin amalda OrderModal)
+ * Bu modal orqali mijoz buyurtmalari (Order) yaratiladi va tahrirlanadi.
+ */
+
 const emptyForm = {
-  order_id: "",
+  lotId: "",
   customer_id: "",
   region_name: "",
   product_id: "",
@@ -35,9 +39,9 @@ const emptyForm = {
 interface OrderLineModalProps {
   visible: boolean;
   onClose: () => void;
-  orderId?: string;
-  editLine?: (OrderLine & { id: string }) | null;
-  onSuccess?: (line: OrderLine & { id: string }, isEdit: boolean) => void;
+  orderId?: string; // Bu amalda lotId (Partiya IDsi)
+  editLine?: (Order & { id: string }) | null;
+  onSuccess?: (order: Order & { id: string }, isEdit: boolean) => void;
   onCustomerAdded?: (customer: Customer & { id: string }) => void;
   initialCustomer?: (Customer & { id: string }) | null;
 }
@@ -58,24 +62,23 @@ const OrderLineModal: React.FC<OrderLineModalProps> = ({
   const [customers, setCustomers] = useState<(Customer & { id: string })[]>([]);
   const [products, setProducts] = useState<(Product & { id: string })[]>([]);
   const [regions, setRegions] = useState<(Region & { id: string })[]>([]);
-  const [orders, setOrders] = useState<(Order & { id: string })[]>([]);
+  const [lots, setLots] = useState<(ProductLot & { id: string })[]>([]);
 
   useEffect(() => {
     if (visible) {
-      // Fetch customers, products, regions, orders if visible
       const fetchData = async () => {
         try {
-          const [customersData, productsData, regionsData, ordersData] =
+          const [customersData, productsData, regionsData, lotsData] =
             await Promise.all([
               db.customers.list(),
               db.products.list(),
               db.regions.list(),
-              db.orders.list(orderBy("date", "desc")),
+              db.lots.list(orderBy("date", "desc")),
             ]);
           setCustomers(customersData as (Customer & { id: string })[]);
           setProducts(productsData as (Product & { id: string })[]);
           setRegions(regionsData as (Region & { id: string })[]);
-          setOrders(ordersData as (Order & { id: string })[]);
+          setLots(lotsData as (ProductLot & { id: string })[]);
         } catch (e) {
           console.error(e);
         }
@@ -87,7 +90,7 @@ const OrderLineModal: React.FC<OrderLineModalProps> = ({
   useEffect(() => {
     if (editLine && visible) {
       setForm({
-        order_id: "",
+        lotId: editLine.lotId || "",
         customer_id: editLine.customer_id,
         region_name: editLine.region_name || "",
         product_id: editLine.product_id,
@@ -101,11 +104,12 @@ const OrderLineModal: React.FC<OrderLineModalProps> = ({
     } else if (visible) {
       setForm({
         ...emptyForm,
+        lotId: orderId || "",
         customer_id: initialCustomer?.id || "",
         region_name: initialCustomer?.region_name || "",
       });
     }
-  }, [editLine, visible, initialCustomer]);
+  }, [editLine, visible, initialCustomer, orderId]);
 
   const customerOptions = useMemo(
     () =>
@@ -120,15 +124,15 @@ const OrderLineModal: React.FC<OrderLineModalProps> = ({
     () => regions.map((r) => ({ label: r.name, value: r.id! })),
     [regions],
   );
-  const orderOptions = useMemo(
-    () => orders.map((o) => ({ label: o.name, value: o.id! })),
-    [orders],
+  const lotOptions = useMemo(
+    () => lots.map((o) => ({ label: o.name, value: o.id! })),
+    [lots],
   );
 
   const handleSave = async () => {
-    const targetOrderId = orderId || form.order_id;
-    if (!targetOrderId) {
-      Alert.alert("Xato", "Partiya (Order) tanlanishi shart");
+    const targetLotId = orderId || form.lotId;
+    if (!targetLotId) {
+      Alert.alert("Xato", "Partiya tanlanishi shart");
       return;
     }
     if (!form.customer_id || !form.product_id || !form.product_count) {
@@ -137,7 +141,8 @@ const OrderLineModal: React.FC<OrderLineModalProps> = ({
     }
     setSaving(true);
     try {
-      const lineData: Omit<OrderLine, "id"> = {
+      const orderData: Omit<Order, "id"> = {
+        lotId: targetLotId,
         customer_id: form.customer_id,
         region_name: form.region_name || "",
         product_id: form.product_id,
@@ -153,17 +158,17 @@ const OrderLineModal: React.FC<OrderLineModalProps> = ({
 
       let returnedId = "";
       if (editLine) {
-        await subOrderLines.update(targetOrderId, editLine.id, lineData);
+        await db.orders.update(editLine.id, orderData);
         returnedId = editLine.id;
       } else {
-        const newId = await subOrderLines.create(targetOrderId, lineData);
+        const newId = await db.orders.create(orderData);
         returnedId = newId;
       }
 
       setForm(emptyForm);
       if (onSuccess) {
         onSuccess(
-          { id: returnedId, orderId: targetOrderId, ...lineData } as any,
+          { id: returnedId, ...orderData } as Order & { id: string },
           !!editLine,
         );
       }
@@ -209,18 +214,18 @@ const OrderLineModal: React.FC<OrderLineModalProps> = ({
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* ── Yoki partiyani tanlash (agar orderId kelmasa) ── */}
+          {/* ── Partiyani tanlash (agar orderId kelmasa) ── */}
           {!orderId && (
             <>
-              <Text style={styles.fieldLabel}>Partiya (Buyurtma)</Text>
+              <Text style={styles.fieldLabel}>Partiya (Lot)</Text>
               <Select
-                data={orderOptions}
+                data={lotOptions}
                 placeholder="Partiyani tanlang"
                 searchPlaceholder="Qidirish..."
                 search={true}
                 maxHeight={280}
-                value={form.order_id || null}
-                onChange={(v) => setForm((f) => ({ ...f, order_id: v }))}
+                value={form.lotId || null}
+                onChange={(v) => setForm((f) => ({ ...f, lotId: v }))}
               />
             </>
           )}
@@ -326,11 +331,8 @@ const OrderLineModal: React.FC<OrderLineModalProps> = ({
             ratingCount={10}
             imageSize={32}
             showRating={false}
-            ratingBackgroundColor="red"
             startingValue={Number(form.rate) || 0}
-            style={{
-              marginRight: "auto",
-            }}
+            style={{ marginRight: "auto" }}
             onFinishRating={(v: number) =>
               setForm((f) => ({ ...f, rate: String(v) }))
             }
@@ -380,15 +382,11 @@ const OrderLineModal: React.FC<OrderLineModalProps> = ({
 
           <View className="flex flex-row flex-1 gap-2 mt-3">
             <Pressable
-              style={[styles.discardBtn]}
+              style={styles.discardBtn}
               onPress={handleClose}
               disabled={saving}
             >
-              {saving ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.discardBtnText}>Bekor qilish</Text>
-              )}
+              <Text style={styles.discardBtnText}>Bekor qilish</Text>
             </Pressable>
 
             <Pressable
@@ -406,7 +404,7 @@ const OrderLineModal: React.FC<OrderLineModalProps> = ({
         </ScrollView>
       </CustomModal>
 
-      {/* Customer Modal inside the Order Line Modal */}
+      {/* Customer Modal inside the Order Modal */}
       {!initialCustomer && (
         <CustomModal
           visible={addCustomerModal}
@@ -468,10 +466,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   stateBtnActive: { backgroundColor: "#6366f1", borderColor: "#6366f1" },
-  stateBtnText: {
-    fontSize: 13,
-    color: "#374151",
-  },
+  stateBtnText: { fontSize: 13, color: "#374151" },
   stateBtnTextActive: { color: "#fff", fontWeight: "600" },
   saveBtn: {
     backgroundColor: "#6366f1",
@@ -495,13 +490,5 @@ const styles = StyleSheet.create({
     marginTop: 60,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-  },
-  fullSheetHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f3f4f6",
   },
 });
