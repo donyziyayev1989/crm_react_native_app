@@ -1,6 +1,7 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Link, Stack } from "expo-router";
 import React from "react";
+import { View } from "react-native";
 
 const CustomerLayout = () => {
   return (
@@ -11,9 +12,14 @@ const CustomerLayout = () => {
           title: "Customers",
           headerShown: true,
           headerRight: () => (
-            <Link href="/customers/addCustomer" className="text-primary p-2">
-              <MaterialIcons name="add" size={24} />
-            </Link>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <Link href="/customers/route" style={{ padding: 8 }}>
+                <MaterialIcons name="directions" size={24} color="#6366f1" />
+              </Link>
+              <Link href="/customers/addCustomer" style={{ padding: 8 }}>
+                <MaterialIcons name="add" size={24} color="#6366f1" />
+              </Link>
+            </View>
           ),
         }}
       />

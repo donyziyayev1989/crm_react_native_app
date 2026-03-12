@@ -160,6 +160,27 @@ const CustomerDetail = () => {
             <Text style={styles.label}>Reyting:</Text>
             <Text style={styles.value}>{customer.rates ?? "—"}</Text>
           </View>
+          {customer.telegram_id ? (
+            <View style={styles.row}>
+              <Text style={styles.label}>Telegram:</Text>
+              <Text style={styles.value}>{customer.telegram_id}</Text>
+            </View>
+          ) : null}
+          {customer.location ? (
+            <View style={styles.row}>
+              <Text style={styles.label}>Lokatsiya:</Text>
+              <Pressable
+                onPress={() => {
+                  const url = `https://www.google.com/maps/search/?api=1&query=${customer.location?.lat},${customer.location?.lng}`;
+                  require("react-native").Linking.openURL(url);
+                }}
+              >
+                <Text style={[styles.value, { color: "#6366f1", fontWeight: "700" }]}>
+                  Xaritada ko'rish
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
           {customer.note ? (
             <View style={styles.row}>
               <Text style={styles.label}>Izoh:</Text>

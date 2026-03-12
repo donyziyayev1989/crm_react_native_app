@@ -80,6 +80,12 @@ export interface Customer {
   note: string;
   rates: number;
   order_ids: string[]; // ref → orders
+  location?: {
+    lat: number;
+    lng: number;
+    address?: string;
+  };
+  telegram_id?: string;
 }
 
 export interface Tag {

@@ -117,6 +117,7 @@ const CustomerForm = ({
       note: initialData?.note || "",
       user_id: initialData?.user_id || "",
       rates: initialData?.rates || 0,
+      telegram_id: initialData?.telegram_id || "",
     },
   });
 
@@ -371,6 +372,24 @@ const CustomerForm = ({
           {errors.rates && (
             <Text style={styles.errorText}>{errors.rates.message}</Text>
           )}
+        </View>
+
+        {/* Telegram ID */}
+        <View style={styles.fieldGroup}>
+          <Text style={styles.label}>Telegram ID</Text>
+          <Controller
+            control={control}
+            name="telegram_id"
+            render={({ field: { onChange, value } }) => (
+              <Input
+                name="telegram_id"
+                value={value ?? ""}
+                errors={errors}
+                onChange={onChange}
+                placeholder="Telegram ID yoki username..."
+              />
+            )}
+          />
         </View>
 
         {/* Note */}

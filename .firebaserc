@@ -1,5 +1,7 @@
 {
   "projects": {
     "default": "crm-app-73726"
-  }
+  },
+  "targets": {},
+  "etags": {}
 }
