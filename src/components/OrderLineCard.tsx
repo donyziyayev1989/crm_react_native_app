@@ -11,6 +11,7 @@ export interface OrderLineCardProps {
   subtitle?: string;
   topIconName?: keyof typeof MaterialIcons.glyphMap;
   productName: string;
+  userName?: string;
 }
 
 const OrderLineCard: React.FC<OrderLineCardProps> = ({
@@ -19,6 +20,7 @@ const OrderLineCard: React.FC<OrderLineCardProps> = ({
   subtitle,
   topIconName = "person",
   productName,
+  userName = "Noma'lum",
 }) => {
   return (
     <Card>
@@ -110,7 +112,7 @@ const OrderLineCard: React.FC<OrderLineCardProps> = ({
       >
         <View className="flex-1">
           <Text className="font-semibold">
-            Ma'sul: <Text className="text-muted font-normal">Doniyor</Text>
+            Ma'sul: <Text className="text-muted font-normal">{userName}</Text>
           </Text>
         </View>
 

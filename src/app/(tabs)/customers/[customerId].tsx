@@ -25,6 +25,7 @@ const CustomerDetail = () => {
   const [productsMap, setProductsMap] = useState<
     Record<string, { name: string; price: number }>
   >({});
+  const [usersMap, setUsersMap] = useState<Record<string, string>>({});
   const [ordersMap, setOrdersMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [addLineModal, setAddLineModal] = useState(false);
@@ -41,11 +42,13 @@ const CustomerDetail = () => {
           where("customer_id", "==", customerId),
         );
 
-        const [customerData, productsData, linesSnapshot] = await Promise.all([
-          db.customers.get(customerId),
-          db.products.list(),
-          getDocs(q),
-        ]);
+        const [customerData, productsData, usersData, linesSnapshot] =
+          await Promise.all([
+            db.customers.get(customerId),
+            db.products.list(),
+            db.users.list(),
+            getDocs(q),
+          ]);
 
         if (!customerData) {
           setCustomer(null);
@@ -73,6 +76,13 @@ const CustomerDetail = () => {
           }
         });
         setProductsMap(pMap);
+
+        // 3.1 Users map
+        const uMap: Record<string, string> = {};
+        usersData.forEach((u) => {
+          if (u.id) uMap[u.id] = u.name;
+        });
+        setUsersMap(uMap);
 
         // 4. Faqat kerakli orderlar nomlarini olamiz
         const uniqueOrderIds = [
@@ -183,6 +193,7 @@ const CustomerDetail = () => {
                   productName={
                     productsMap[line.product_id]?.name || "Noma'lum mahsulot"
                   }
+                  userName={usersMap[line.user_id]}
                 />
               </View>
             ))

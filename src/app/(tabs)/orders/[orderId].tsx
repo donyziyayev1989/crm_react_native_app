@@ -1,7 +1,14 @@
 import LostProductModal from "@/components/LostProductModal";
 import OrderLineCard from "@/components/OrderLineCard";
 import OrderLineModal from "@/components/OrderLineModal";
-import { Customer, Order, OrderLine, Product, Region } from "@/interfaces";
+import {
+  Customer,
+  Order,
+  OrderLine,
+  Product,
+  Region,
+  User,
+} from "@/interfaces";
 import db, { subOrderLines } from "@/services/database";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { callPhone, openTelegram } from "@utils/actions";
@@ -31,6 +38,7 @@ const OrderDetail = () => {
   const [customers, setCustomers] = useState<(Customer & { id: string })[]>([]);
   const [products, setProducts] = useState<(Product & { id: string })[]>([]);
   const [regions, setRegions] = useState<(Region & { id: string })[]>([]);
+  const [users, setUsers] = useState<(User & { id: string })[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Order line qo'shish / tahrirlash modal
@@ -48,19 +56,27 @@ const OrderDetail = () => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const [orderData, linesData, customersData, productsData, regionsData] =
-          await Promise.all([
-            db.orders.get(orderId),
-            subOrderLines.list(orderId),
-            db.customers.list(),
-            db.products.list(),
-            db.regions.list(),
-          ]);
+        const [
+          orderData,
+          linesData,
+          customersData,
+          productsData,
+          regionsData,
+          usersData,
+        ] = await Promise.all([
+          db.orders.get(orderId),
+          subOrderLines.list(orderId),
+          db.customers.list(),
+          db.products.list(),
+          db.regions.list(),
+          db.users.list(),
+        ]);
         setOrder(orderData as Order & { id: string });
         setOrderLines(linesData as (OrderLine & { id: string })[]);
         setCustomers(customersData as (Customer & { id: string })[]);
         setProducts(productsData as (Product & { id: string })[]);
         setRegions(regionsData as (Region & { id: string })[]);
+        setUsers(usersData as (User & { id: string })[]);
       } catch (e) {
         console.error(e);
       } finally {
@@ -130,6 +146,14 @@ const OrderDetail = () => {
       return 0;
     });
   }, [orderLines, regions]);
+
+  const usersMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    users.forEach((u) => {
+      map[u.id!] = u.name;
+    });
+    return map;
+  }, [users]);
 
   // ─── Swipeable row refs (must be before any early return) ────────────────────
   const rowRefs = useRef(new Map<string, any>());
@@ -260,6 +284,7 @@ const OrderDetail = () => {
                       title={getCustomerName(item.customer_id)}
                       subtitle={formatPhone(getCustomerPhone(item.customer_id))}
                       productName={getProductName(item.product_id)}
+                      userName={usersMap[item.user_id]}
                     />
                   </ReanimatedSwipeable>
                 </View>

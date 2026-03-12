@@ -1,6 +1,7 @@
 import Input from "@/components/Input";
 import PhoneInput from "@/components/PhoneInput";
 import Select from "@/components/Select";
+import { auth } from "@/firebase/firebase";
 import db, { database, subDistricts, where } from "@/services/database";
 import { formatPhone } from "@/utils/format";
 import { Customer, District } from "@interfaces/index";
@@ -151,14 +152,20 @@ const CustomerForm = ({
       }
 
       if (initialData?.id) {
-        await db.customers.update(initialData.id, cleanedData);
+        await db.customers.update(initialData.id, {
+          ...cleanedData,
+          user_id: cleanedData.user_id || auth.currentUser?.uid || "",
+        });
         if (onSuccess) {
           onSuccess(initialData.id, cleanedData);
         } else {
           Alert.alert("Mijoz yangilandi");
         }
       } else {
-        const newId = await db.customers.create(cleanedData);
+        const newId = await db.customers.create({
+          ...cleanedData,
+          user_id: auth.currentUser?.uid || "",
+        });
         if (onSuccess) {
           onSuccess(newId, cleanedData);
         } else {

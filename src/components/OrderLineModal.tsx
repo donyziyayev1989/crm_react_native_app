@@ -1,3 +1,4 @@
+import { auth } from "@/firebase/firebase";
 import { Customer, Order, OrderLine, Product, Region } from "@/interfaces";
 import db, { orderBy, subOrderLines } from "@/services/database";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
@@ -146,7 +147,7 @@ const OrderLineModal: React.FC<OrderLineModalProps> = ({
         state: form.state || "new",
         delivery_price: Number(form.delivery_price) || 0,
         date: editLine?.date ?? new Date().toISOString(),
-        user_id: editLine?.user_id ?? "",
+        user_id: editLine?.user_id || auth.currentUser?.uid || "",
         note: form.note || "",
       };
 

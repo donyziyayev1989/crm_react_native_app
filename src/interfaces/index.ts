@@ -8,10 +8,11 @@
 //   orders/{orderId}/order_lines/{id}     ← OrderLine (subcollection)
 
 export interface User {
-  id?: string;
+  id?: string; // Firebase Auth UID
   name: string;
-  login: number;
-  password: string;
+  email: string | null;
+  photoURL?: string | null;
+  role?: string;
 }
 
 export interface Order {
