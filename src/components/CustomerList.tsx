@@ -91,7 +91,7 @@ const CustomerList = ({ data }: { data: Customer[] }) => {
           <MaterialIcons name="phone" size={24} color="white" />
         </Pressable>
         <Pressable
-          onPress={() => openTelegram(item.phone)}
+          onPress={() => openTelegram(item.telegram_id || item.phone)}
           className="bg-blue-400 w-16 h-full flex items-center justify-center"
         >
           <MaterialIcons name="telegram" size={24} color="white" />

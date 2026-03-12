@@ -131,6 +131,8 @@ const OrderDetail = () => {
     customers.find((c) => c.id === id)?.name ?? id;
   const getCustomerPhone = (id: string) =>
     customers.find((c) => c.id === id)?.phone ?? "";
+  const getCustomerTelegramId = (id: string) =>
+    customers.find((c) => c.id === id)?.telegram_id ?? "";
   const getProductName = (id: string) =>
     products.find((p) => p.id === id)?.name ?? id;
   const getRegionName = (id: string) =>
@@ -190,7 +192,9 @@ const OrderDetail = () => {
             <MaterialIcons name="phone" size={24} color="white" />
           </Pressable>
           <Pressable
-            onPress={() => openTelegram(phone)}
+            onPress={() =>
+              openTelegram(getCustomerTelegramId(item.customer_id) || phone)
+            }
             className="bg-blue-400 w-16 h-full flex items-center justify-center"
           >
             <MaterialIcons name="telegram" size={24} color="white" />
