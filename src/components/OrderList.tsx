@@ -18,7 +18,11 @@ interface OrderListProps {
   onEdit: (order: Order & { id: string }) => void;
   onDelete: (order: Order & { id: string }) => void;
   onCall: (phone: string) => void;
-  onTelegram: (identifier: string) => void;
+  onTelegram: (
+    identifier: string,
+    message?: string,
+    chatData?: { chatId: string; title: string },
+  ) => void;
   onOrderPress?: (id: string) => void;
   ListHeaderComponent?: React.ComponentType<any> | React.ReactElement | null;
   ListEmptyComponent?: React.ComponentType<any> | React.ReactElement | null;
@@ -101,31 +105,40 @@ const OrderList: React.FC<OrderListProps> = ({
     const customer = customersMap[item.customer_id];
     const phone = customer?.phone || "";
     return (
-      <View className="bg-white flex-row overflow-hidden rounded-r-2xl border-l border-gray-100">
-        <Pressable
-          onPress={() => onEdit(item)}
-          className="bg-slate-300 w-16 h-full flex items-center justify-center"
-        >
-          <MaterialIcons name="edit" size={20} color="white" />
-        </Pressable>
-        <Pressable
-          onPress={() => onDelete(item)}
-          className="bg-red-400 w-16 h-full flex items-center justify-center"
-        >
-          <MaterialIcons name="delete" size={20} color="white" />
-        </Pressable>
-        <Pressable
-          onPress={() => onCall(phone)}
-          className="bg-green-500 w-16 h-full flex items-center justify-center"
-        >
-          <MaterialIcons name="phone" size={22} color="white" />
-        </Pressable>
-        <Pressable
-          onPress={() => onTelegram(customer?.telegram_id || phone)}
-          className="bg-blue-400 w-16 h-full flex items-center justify-center"
-        >
-          <MaterialIcons name="telegram" size={22} color="white" />
-        </Pressable>
+      <View className="bg-white flex-col overflow-hidden rounded-r-2xl border-l border-slate-400">
+        <View className="flex-row h-1/2">
+          <Pressable
+            onPress={() => onEdit(item)}
+            className="aspect-square bg-slate-400 flex items-center justify-center"
+          >
+            <MaterialIcons name="edit" size={20} color="white" />
+          </Pressable>
+          <Pressable
+            onPress={() => onDelete(item)}
+            className="aspect-square bg-red-400 flex items-center justify-center"
+          >
+            <MaterialIcons name="delete" size={20} color="white" />
+          </Pressable>
+        </View>
+        <View className="flex-row h-1/2">
+          <Pressable
+            onPress={() => onCall(phone)}
+            className="aspect-square bg-green-400 flex items-center justify-center"
+          >
+            <MaterialIcons name="phone" size={22} color="white" />
+          </Pressable>
+          <Pressable
+            onPress={() =>
+              onTelegram(customer?.telegram_id || phone, undefined, {
+                chatId: customer?.id || "",
+                title: customer?.name || "",
+              })
+            }
+            className="aspect-square bg-blue-400 flex items-center justify-center"
+          >
+            <MaterialIcons name="telegram" size={22} color="white" />
+          </Pressable>
+        </View>
       </View>
     );
   };

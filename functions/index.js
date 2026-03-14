@@ -47,16 +47,60 @@ async function getAddressDetails(lat, lng) {
 
     const address = response.data.address;
 
-    // O'zbekiston uchun OSM maydonlarini filtrlash
-    const region =
-      address.state || address.province || address.region || "Noma'lum viloyat";
-    const district =
+    let region =
+      address.state ||
+      address.province ||
+      address.region ||
+      address.city ||
+      address.town ||
+      address.county ||
+      address.municipality ||
+      "Noma'lum viloyat";
+
+    const district = (
       address.city_district ||
       address.county ||
+      address.district ||
       address.town ||
       address.city ||
       address.village ||
-      "Noma'lum tuman";
+      address.suburb ||
+      "Noma'lum tuman"
+    ).replace(/ tumani| tuman/gi, "").trim();
+
+    // ─── Uzbekistan Region Mapping (Normalize for CRM) ────────────────────────
+    const r = region.toLowerCase();
+
+    if (r.includes("toshkent")) {
+      // Toshkent shahri vs viloyati farqlash
+      // Agar 'city' maydoni "Toshkent" bo'lsa yoki 'state_district' bo'lmasa ko'pincha bu shahar
+      if (
+        address.city === "Toshkent" ||
+        (!r.includes("viloyat") && !r.includes("region"))
+      ) {
+        region = "Toshkent shahri";
+      } else {
+        region = "Toshkent viloyati";
+      }
+    } else if (r.includes("andijon")) region = "Andijon";
+    else if (r.includes("buxoro")) region = "Buxoro";
+    else if (
+      r.includes("fargona") ||
+      r.includes("farg'ona") ||
+      r.includes("fergana")
+    )
+      region = "Fargona";
+    else if (r.includes("jizzax")) region = "Jizzax";
+    else if (r.includes("xorazm")) region = "Xorazm";
+    else if (r.includes("namangan")) region = "Namangan";
+    else if (r.includes("navoiy")) region = "Navoiy";
+    else if (r.includes("qashqadaryo") || r.includes("kashkadarya"))
+      region = "Qashqadaryo";
+    else if (r.includes("qoraqalpog") || r.includes("karakalpak"))
+      region = "Qoraqalpog'iston Respublikasi";
+    else if (r.includes("samarqand")) region = "Samarqand";
+    else if (r.includes("sirdaryo")) region = "Sirdaryo";
+    else if (r.includes("surxondaryo")) region = "Surxondaryo";
 
     return { region, district };
   } catch (err) {
@@ -131,24 +175,83 @@ exports.telegramWebhook = functions.https.onRequest(async (req, res) => {
 
   // ─── Step 2: Ism Qabul qilish ───────────────────────────────────────────────
   if (text && sessionData.step === "request_name") {
+    // Ismni saqlash
     await sessionRef.update({
-      step: "request_location",
       name: text,
+      step: "request_product",
     });
 
-    await sendMessage(
-      chatId,
-      `Salom, ${text}! Endi hozir turgan manzilingizni (lokatsiya) yuboring:`,
-      {
-        reply_markup: {
-          keyboard: [
-            [{ text: "📍 Lokatsiyani yuborish", request_location: true }],
-          ],
-          resize_keyboard: true,
-          one_time_keyboard: true,
+    // Mahsulotlarni bazadan olish
+    const productsSnap = await db
+      .collection("products")
+      .where("active", "==", true)
+      .get();
+    const products = productsSnap.docs.map((doc) => ({
+      id: doc.id,
+      name: doc.data().name,
+    }));
+
+    if (products.length === 0) {
+      await sessionRef.update({ step: "request_location" });
+      await sendMessage(
+        chatId,
+        "Rahmat! Endi hozir turgan manzilingizni (lokatsiya) yuboring:",
+        {
+          reply_markup: {
+            keyboard: [
+              [{ text: "📍 Lokatsiyani yuborish", request_location: true }],
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: true,
+          },
         },
+      );
+    } else {
+      const keyboard = products.map((p) => [{ text: p.name }]);
+      await sendMessage(
+        chatId,
+        "Qaysi mahsulotni sotib olmoqchisiz? Tanlang:",
+        {
+          reply_markup: {
+            keyboard: keyboard,
+            resize_keyboard: true,
+            one_time_keyboard: true,
+          },
+        },
+      );
+    }
+    return res.status(200).send("ok");
+  }
+
+  // ─── Step 2.5: Mahsulot Tanlash ──────────────────────────────────────────────
+  if (text && sessionData.step === "request_product") {
+    // Tanlangan mahsulotni tekshirish
+    const productsSnap = await db
+      .collection("products")
+      .where("name", "==", text)
+      .limit(1)
+      .get();
+
+    if (productsSnap.empty) {
+      return sendMessage(chatId, "Iltimos, ro'yxatdagilardan birini tanlang:");
+    }
+
+    const productDoc = productsSnap.docs[0];
+    await sessionRef.update({
+      step: "request_location",
+      product_id: productDoc.id,
+      product_name: productDoc.data().name,
+    });
+
+    await sendMessage(chatId, "Ajoyib tanlov! Endi lokatsiyangizni yuboring:", {
+      reply_markup: {
+        keyboard: [
+          [{ text: "📍 Lokatsiyani yuborish", request_location: true }],
+        ],
+        resize_keyboard: true,
+        one_time_keyboard: true,
       },
-    );
+    });
     return res.status(200).send("ok");
   }
 
@@ -198,12 +301,14 @@ exports.telegramWebhook = functions.https.onRequest(async (req, res) => {
       name: sessionData.name || "Noma'lum",
       phone: sessionData.phoneNumber,
       telegram_id: sessionData.telegram_id,
+      product_id: sessionData.product_id || null,
+      product_name: sessionData.product_name || "Noma'lum mahsulot",
       product_count: count,
       region_name: region,
       district_name: district,
       location: sessionData.location || null,
       date: new Date().toISOString(),
-      status: "new",
+      state: "new",
       note: "Bot orqali",
     };
 

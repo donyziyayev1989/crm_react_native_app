@@ -37,7 +37,6 @@ const Leads = () => {
   }, []);
 
   const handleConfirm = async (lead: Lead & { id: string }) => {
-    // ... same as before
     Alert.alert(
       "Tasdiqlash",
       "Bu murojaatdan mijoz va buyurtma yaratilsinmi?",
@@ -47,37 +46,55 @@ const Leads = () => {
           text: "Tasdiqlash",
           onPress: async () => {
             try {
+              // Mahsulot narxini olish
+              let productPrice = 0;
+              if (lead.product_id) {
+                const product = await db.products.get(lead.product_id);
+                if (product) {
+                  productPrice = product.price;
+                }
+              }
+
               // Mijoz yaratish
               const customerId = await db.customers.create({
                 name: lead.name,
                 phone: lead.phone,
                 telegram_id: lead.telegram_id,
-                region_name: "Noma'lum",
+                region_name: lead.region_name || "Noma'lum",
+                district_name: lead.district_name || "Noma'lum",
+                location: lead.location,
                 tag_ids: [],
                 order_ids: [],
                 rates: 0,
-                note: lead.note || "",
+                note: lead.note || "Telegram bot orqali",
                 user_id: "",
               });
 
+              console.log("Customer created with ID:", customerId);
+
               // Buyurtma yaratish
-              await db.orders.create({
+              const orderId = await db.orders.create({
                 customer_id: customerId,
                 product_count: lead.product_count,
                 lotId: "",
                 date: new Date().toISOString(),
-                product_id: "",
-                product_price: 0,
+                product_id: lead.product_id || "",
+                product_price: productPrice,
                 delivery_price: 0,
-                region_name: "Noma'lum",
+                region_name: lead.region_name || "Noma'lum",
+                location: lead.location,
                 rate: 0,
                 state: "new",
                 user_id: "",
-              });
+                total: productPrice * lead.product_count,
+              } as any);
+
+              console.log("Order created with ID:", orderId);
 
               // Leadni o'chirish
               await db.leads.delete(lead.id);
               Alert.alert("Muvaffaqiyatli", "Mijoz va buyurtma yaratildi.");
+              router.push(`/orders/${orderId}` as any);
             } catch (err) {
               Alert.alert("Xato", "Mijoz yaratishda xatolik yuz berdi.");
             }
@@ -133,11 +150,21 @@ const Leads = () => {
                   {item.name}
                 </Text>
                 <Text className="text-gray-500">{formatPhone(item.phone)}</Text>
-                <Text className="text-indigo-600 font-semibold mt-1">
+                <View className="bg-indigo-50 px-2 py-1 rounded-md self-start mt-1">
+                  <Text className="text-indigo-600 font-bold">
+                    {item.product_name || "Noma'lum mahsulot"}
+                  </Text>
+                </View>
+                <Text className="text-blue-500 font-semibold mt-1">
                   {item.product_count} dona buyurtma
                 </Text>
+                {item.region_name && (
+                  <Text className="text-xs text-gray-400 mt-1">
+                    📍 {item.region_name}, {item.district_name}
+                  </Text>
+                )}
               </View>
-              <Text className="text-xs text-gray-400">
+              <Text className="text-[10px] text-gray-400">
                 {formatDate(item.date)}
               </Text>
             </View>

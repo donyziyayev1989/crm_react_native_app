@@ -9,13 +9,10 @@ const CustomerLayout = () => {
       <Stack.Screen
         name="index"
         options={{
-          title: "Customers",
+          title: "Mijozlar",
           headerShown: true,
           headerRight: () => (
             <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <Link href="/customers/route" style={{ padding: 8 }}>
-                <MaterialIcons name="directions" size={24} color="#6366f1" />
-              </Link>
               <Link href="/customers/addCustomer" style={{ padding: 8 }}>
                 <MaterialIcons name="add" size={24} color="#6366f1" />
               </Link>
@@ -25,7 +22,7 @@ const CustomerLayout = () => {
       />
       <Stack.Screen
         name="[customerId]"
-        options={{ title: "Customer Detail", headerShown: true }}
+        options={{ title: "Mijoz ma'lumotlari", headerShown: true }}
       />
       <Stack.Screen
         name="edit/[customerId]"
@@ -34,7 +31,7 @@ const CustomerLayout = () => {
       <Stack.Screen
         name="addCustomer"
         options={{
-          title: "Add Customer",
+          title: "Mijoz qo'shish",
           headerShown: true,
           headerLeft: () => (
             <Link href="/customers/" className="text-primary p-2">

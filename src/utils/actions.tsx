@@ -1,3 +1,4 @@
+import { chatEvents } from "./chat_events";
 import { Alert, Linking, Platform } from "react-native";
 
 export const callPhone = async (phone: string) => {
@@ -24,11 +25,23 @@ const BOT_TOKEN = process.env.EXPO_PUBLIC_BOT_TOKEN;
 export const openTelegram = async (
   identifier: string | number | undefined,
   message: string = "Salom! Siz bilan CRM orqali bog'lanishmoqda.",
+  chatData?: { chatId: string; title: string },
 ) => {
   if (!identifier) {
-    Alert.alert("Xatolik", "Telegram ma'lumotlari mavjud emas");
+    Alert.alert("Xatolik", "Telegram ma'mulotlari mavjud emas");
     return;
   }
+
+  // --- In-App Chat Trigger ---
+  if (chatData) {
+    chatEvents.emit({
+      chatId: chatData.chatId,
+      title: chatData.title,
+      targetIdentifier: String(identifier),
+    });
+    return;
+  }
+  // ---------------------------
 
   const idStr = String(identifier).trim().replace("@", "");
   const isNumeric = /^\d+$/.test(idStr);

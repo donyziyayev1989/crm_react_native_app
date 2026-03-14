@@ -73,6 +73,26 @@ const Select = ({
 
   const hasMore = visibleData.length < filteredData.length;
 
+  /** Selected itemlar slice da bo'lishini ta'minlash */
+  const finalVisibleData = useMemo(() => {
+    const slice = [...visibleData];
+    const addIfMissing = (val: string) => {
+      if (val && !slice.find((item) => item.value === val)) {
+        const found = data.find((item) => item.value === val);
+        if (found) slice.push(found);
+      }
+    };
+
+    if (propValue) {
+      if (Array.isArray(propValue)) {
+        propValue.forEach(addIfMissing);
+      } else {
+        addIfMissing(propValue);
+      }
+    }
+    return slice;
+  }, [visibleData, propValue, data]);
+
   /** Keyingi sahifani yuklash */
   const loadMore = useCallback(() => {
     if (isLoadingRef.current || !hasMore) return;
@@ -118,7 +138,7 @@ const Select = ({
         style={styles.dropdown}
         inputSearchStyle={styles.inputSearchStyle}
         iconStyle={styles.iconStyle}
-        data={visibleData}
+        data={finalVisibleData}
         labelField="label"
         valueField="value"
         placeholder={placeholder}
@@ -160,7 +180,7 @@ const Select = ({
         isFocus && styles.focus,
         name && errors?.[name] && styles.errorInput,
       ]}
-      data={visibleData}
+      data={finalVisibleData}
       search={search}
       maxHeight={maxHeight}
       labelField="label"

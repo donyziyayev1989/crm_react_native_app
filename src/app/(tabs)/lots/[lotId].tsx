@@ -1,19 +1,14 @@
 import LostProductModal from "@/components/LostProductModal";
+import LotMap from "@/components/LotMap";
 import OrderList from "@/components/OrderList";
 import OrderModal from "@/components/OrderModal";
-import {
-  Customer,
-  Order,
-  Product,
-  ProductLot,
-  Region,
-  User,
-} from "@/interfaces";
+import { Customer, Order, Product, ProductLot, User } from "@/interfaces";
 import db, { where } from "@/services/database";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { callPhone, openTelegram } from "@utils/actions";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import { optimizeRoute } from "@/utils/optimization";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -34,13 +29,15 @@ const OrderDetail = () => {
   const [orders, setOrders] = useState<(Order & { id: string })[]>([]);
   const [customers, setCustomers] = useState<(Customer & { id: string })[]>([]);
   const [products, setProducts] = useState<(Product & { id: string })[]>([]);
-  const [regions, setRegions] = useState<(Region & { id: string })[]>([]);
   const [users, setUsers] = useState<(User & { id: string })[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [addLineModal, setAddLineModal] = useState(false);
-  const [editLine, setEditLine] = useState<(Order & { id: string }) | null>(null);
+  const [editLine, setEditLine] = useState<(Order & { id: string }) | null>(
+    null,
+  );
   const [addLostModal, setAddLostModal] = useState(false);
+  const [viewMode, setViewMode] = useState<"list" | "map">("list");
 
   useEffect(() => {
     if (!lotId) return;
@@ -66,7 +63,6 @@ const OrderDetail = () => {
         setOrders(ordersData as (Order & { id: string })[]);
         setCustomers(customersData as (Customer & { id: string })[]);
         setProducts(productsData as (Product & { id: string })[]);
-        setRegions(regionsData as (Region & { id: string })[]);
         setUsers(usersData as (User & { id: string })[]);
       } catch (e) {
         console.error(e);
@@ -75,6 +71,7 @@ const OrderDetail = () => {
       }
     };
     fetchData();
+    console.log(orders);
   }, [lotId]);
 
   const handleSuccess = (order: Order & { id: string }, isEdit: boolean) => {
@@ -112,6 +109,35 @@ const OrderDetail = () => {
     setCustomers((prev) => [...prev, customer]);
   };
 
+  const optimizedOrders = useMemo(() => {
+    const markers = orders
+      .map((order) => {
+        const customer = customers.find((c) => c.id === order.customer_id);
+        if (customer?.location?.lat && customer?.location?.lng) {
+          return {
+            ...order,
+            coordinate: {
+              latitude: customer.location.lat,
+              longitude: customer.location.lng,
+            },
+          };
+        }
+        return null;
+      })
+      .filter(Boolean) as any[];
+
+    console.log("[DEBUG] Orders found:", orders.length);
+    console.log("[DEBUG] Markers with coordinates:", markers.length);
+    if (markers.length > 0) {
+      console.log("[DEBUG] First marker coords:", markers[0].coordinate);
+    }
+
+    const optimized = optimizeRoute(markers);
+    const optimizedIds = optimized.map((o) => o.id);
+    const unoptimized = orders.filter((o) => !optimizedIds.includes(o.id));
+    return [...optimized, ...unoptimized];
+  }, [orders, customers]);
+
   if (loading) {
     return (
       <View style={styles.center}>
@@ -126,55 +152,98 @@ const OrderDetail = () => {
         options={{
           title: lot?.name ?? "Partiya tafsiloti",
           headerRight: () => (
-            <Pressable
-              onPress={() => setAddLostModal(true)}
-              className="p-3"
-            >
-              <MaterialIcons
-                name="remove-circle-outline"
-                size={24}
-                color="#ef4444"
-              />
-            </Pressable>
+            <View className="flex-row items-center">
+              <Pressable
+                onPress={() => setViewMode(viewMode === "list" ? "map" : "list")}
+                className="p-3"
+              >
+                <MaterialIcons
+                  name={viewMode === "list" ? "map" : "list"}
+                  size={24}
+                  color="#6366f1"
+                />
+              </Pressable>
+              <Pressable onPress={() => setAddLostModal(true)} className="p-3">
+                <MaterialIcons
+                  name="remove-circle-outline"
+                  size={24}
+                  color="#ef4444"
+                />
+              </Pressable>
+            </View>
           ),
         }}
       />
 
-      <OrderList
-        orders={orders}
-        customers={customers}
-        products={products}
-        lots={lot ? [lot] : []}
-        users={users}
-        onEdit={openEditModal}
-        onDelete={handleDelete}
-        onCall={callPhone}
-        onTelegram={openTelegram}
-        onOrderPress={(id) => {
-          router.push({
-            pathname: "/orders/[orderId]",
-            params: { orderId: id },
-          });
-        }}
-        ListEmptyComponent={() => (
-           <View style={styles.empty}>
+      {viewMode === "map" ? (
+        <View style={{ flex: 1, padding: 10 }}>
+          <LotMap orders={orders} customers={customers} products={products} />
+          <View style={{ flex: 1 }}>
+            <OrderList
+              orders={optimizedOrders}
+              customers={customers}
+              products={products}
+              lots={lot ? [lot] : []}
+              users={users}
+              onEdit={openEditModal}
+              onDelete={handleDelete}
+              onCall={callPhone}
+              onTelegram={openTelegram}
+              onOrderPress={(id) => {
+                router.push({
+                  pathname: "/orders/[orderId]",
+                  params: { orderId: id },
+                });
+              }}
+              ListHeaderComponent={() => (
+                <View style={{ paddingVertical: 10 }}>
+                  <Text style={{ fontSize: 18, fontWeight: "bold" }}>
+                    Yonalish boyicha buyurtmalar:
+                  </Text>
+                </View>
+              )}
+            />
+          </View>
+        </View>
+      ) : (
+        <OrderList
+          orders={orders}
+          customers={customers}
+          products={products}
+          lots={lot ? [lot] : []}
+          users={users}
+          onEdit={openEditModal}
+          onDelete={handleDelete}
+          onCall={callPhone}
+          onTelegram={openTelegram}
+          onOrderPress={(id) => {
+            router.push({
+              pathname: "/orders/[orderId]",
+              params: { orderId: id },
+            });
+          }}
+          ListEmptyComponent={() => (
+            <View style={styles.empty}>
               <MaterialIcons name="inbox" size={40} color="#d1d5db" />
-              <Text style={styles.emptyText}>Bu partiyada buyurtmalar mavjud emas</Text>
-           </View>
-        )}
-        ListFooterComponent={() => (
-          <Pressable
-            style={styles.addBtn}
-            onPress={() => {
-              setEditLine(null);
-              setAddLineModal(true);
-            }}
-          >
-            <MaterialIcons name="add" size={20} color="#fff" />
-            <Text style={styles.addBtnText}>Buyurtma qo'shish</Text>
-          </Pressable>
-        )}
-      />
+              <Text style={styles.emptyText}>
+                Bu partiyada buyurtmalar mavjud emas
+              </Text>
+            </View>
+          )}
+          ListFooterComponent={() => (
+            <Pressable
+              style={styles.addBtn}
+              onPress={() => {
+                setEditLine(null);
+                setAddLineModal(true);
+              }}
+            >
+              <MaterialIcons name="add" size={20} color="#fff" />
+              <Text style={styles.addBtnText}>Buyurtma qo'shish</Text>
+            </Pressable>
+          )}
+        />
+      )}
 
       <OrderModal
         visible={addLineModal}

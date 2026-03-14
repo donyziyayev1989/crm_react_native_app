@@ -19,7 +19,12 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.sale"
+      "package": "com.anonymous.sale",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyCU3WlXkKYHtd01OJkbf6M6zn0BSYVJPuk"
+        }
+      }
     },
     "web": {
       "output": "static",

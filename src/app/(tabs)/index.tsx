@@ -2,7 +2,6 @@ import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Link } from "expo-router";
 import React from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-
 export default function Index() {
   return (
     <ScrollView style={styles.container}>
@@ -17,6 +16,12 @@ export default function Index() {
           <Pressable style={styles.card}>
             <MaterialIcons name="account-circle" size={32} color="#6b7280" />
             <Text style={styles.cardText}>Profil</Text>
+          </Pressable>
+        </Link>
+        <Link href="/products" asChild>
+          <Pressable style={styles.card}>
+            <MaterialIcons name="inventory" size={32} color="#3b82f6" />
+            <Text style={styles.cardText}>Mahsulotlar</Text>
           </Pressable>
         </Link>
       </View>

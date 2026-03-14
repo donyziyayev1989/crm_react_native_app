@@ -1,28 +1,24 @@
 import { doc, setDoc } from "firebase/firestore";
-import { database } from "../../firebase/firebase";
-import { districs } from "./districts";
+import { database } from "../firebase";
+import { districts } from "./districts";
 import { regions } from "./regions";
 
+/**
+ * Migrates Regions and Districts data to Firestore using a flat architecture.
+ * regions/{id} -> { name }
+ * districts/{id} -> { name, regionId }
+ */
 export async function migrate() {
-  console.log("Migration boshlandi...");
+  console.log("🚀 Migration boshlandi...");
 
-  // ─── 1. Regions: aniq ID bilan saqlash ──────────────────────────────────────
-  // regions[].id → Firestore document ID sifatida ishlatiladi
-  const regionIdMap = {}; // { "Fargona": "fargona", "Andijon": "andijon", ... }
-
+  // 1. Regions: regions/{id}
   for (const region of regions) {
-    const { id, ...data } = region;
-    await setDoc(doc(database, "regions", id), data);
-    // districts.js dagi region_id ("Fargona") → Firestore ID ("fargona") ga map
-    regionIdMap[data.name] = id;
-    console.log(`  ✓ Region: ${data.name} (ID: ${id})`);
+    const { id, name } = region;
+    await setDoc(doc(database, "regions", id), { name });
+    console.log(`  ✓ Region saqlandi: ${name} (${id})`);
   }
 
-  // ─── 2. Districts: regions/{regionId}/districts subcollectionga yozish ──────
-  // districts.js dagi region_id maydoni region.name bilan mos keladi
-  // Masalan: "Fargona" → regionIdMap["Farg'ona"] = "fargona"
-
-  // region_id → Firestore region ID ga sodda mapping (to'g'ridan-to'g'ri)
+  // 2. Mapping between districts.region_id and regions.id
   const regionKeyMap = {
     "Toshkent sh.":    "toshkent_sh",
     "Toshkent vil.":   "toshkent_v",
@@ -40,22 +36,28 @@ export async function migrate() {
     "Surxondaryo":     "surxondaryo",
   };
 
-  for (const district of districs) {
-    const { id, region_id, ...data } = district;
+  // 3. Districts: districts/{id} (Flat collection with regionId)
+  let count = 0;
+  for (const district of districts) {
+    const { id, name, region_id } = district;
     const regionFirestoreId = regionKeyMap[region_id];
 
     if (!regionFirestoreId) {
-      console.warn(`  ⚠ Noma'lum region_id: "${region_id}" (district: ${data.name})`);
+      console.warn(`  ⚠ Noma'lum region_id: "${region_id}" (district: ${name})`);
       continue;
     }
 
-    // Subcollectionga explicit ID bilan yozish
-    await setDoc(
-      doc(database, "regions", regionFirestoreId, "districts", id),
-      data   // faqat { name } — region ma'lumoti path da
-    );
-    console.log(`  ✓ District: ${data.name} → regions/${regionFirestoreId}/districts/${id}`);
+    await setDoc(doc(database, "districts", id), {
+      name: name,
+      regionId: regionFirestoreId,
+    });
+    
+    count++;
+    if (count % 20 === 0) {
+      console.log(`  ... ${count} ta tuman saqlandi`);
+    }
   }
 
-  console.log("Migration muvaffaqiyatli yakunlandi!");
+  console.log(`✅ Migration muvaffaqiyatli yakunlandi! Jami: ${count} ta tuman.`);
 }
+

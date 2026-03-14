@@ -17,7 +17,7 @@ export default function TabLayout() {
             backgroundColor: "#fff",
             borderTopWidth: 0,
             elevation: 10,
-            shadowColor: "#ccc",
+            shadowColor: "#555",
             shadowOffset: {
               width: 0,
               height: -4,
@@ -82,6 +82,12 @@ export default function TabLayout() {
             ),
             headerShown: false,
           }}
+          listeners={({ navigation }) => ({
+            tabPress: (e) => {
+              // Customers tabini bosganda stackni boshiga qaytarish
+              navigation.navigate("customers", { screen: "index" });
+            },
+          })}
         />
         <Tabs.Screen
           name="lots"
@@ -93,6 +99,18 @@ export default function TabLayout() {
             ),
           }}
         />
+
+        <Tabs.Screen
+          name="products/index"
+          options={{
+            title: "Mahsulotlar",
+            href: null,
+            tabBarIcon: ({ color, size }) => (
+              <MaterialIcons name="inventory" size={size} color={color} />
+            ),
+          }}
+        />
+
         <Tabs.Screen
           name="profile"
           options={{

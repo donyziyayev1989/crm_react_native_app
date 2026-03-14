@@ -39,11 +39,12 @@ const OrderDetail = () => {
         const orderData = await db.orders.get(orderId);
         if (orderData) {
           setOrder(orderData as (Order & { id: string }));
+          const orderObj = orderData as Order;
           const [cust, prod, usr, lt] = await Promise.all([
-            db.customers.get((orderData as Order).customer_id),
-            db.products.get((orderData as Order).product_id),
-            db.users.get((orderData as Order).user_id),
-            db.lots.get((orderData as Order).lotId),
+            orderObj.customer_id ? db.customers.get(orderObj.customer_id) : Promise.resolve(null),
+            orderObj.product_id ? db.products.get(orderObj.product_id) : Promise.resolve(null),
+            orderObj.user_id ? db.users.get(orderObj.user_id) : Promise.resolve(null),
+            orderObj.lotId ? db.lots.get(orderObj.lotId) : Promise.resolve(null),
           ]);
           setCustomer(cust);
           setProduct(prod);
@@ -94,7 +95,13 @@ const OrderDetail = () => {
           </Pressable>
           <Pressable
             style={[styles.telegramBtn, { backgroundColor: "#0088cc" }]}
-            onPress={() => openTelegram(customer?.telegram_id || customer?.phone || "")}
+            onPress={() =>
+              openTelegram(
+                customer?.telegram_id || customer?.phone || "",
+                undefined,
+                { chatId: customer?.id || "", title: customer?.name || "" },
+              )
+            }
           >
             <MaterialIcons name="telegram" size={20} color="#fff" />
             <Text style={styles.btnText}>Telegram</Text>

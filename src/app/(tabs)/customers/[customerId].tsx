@@ -4,6 +4,7 @@ import OrderModal from "@/components/OrderModal";
 import db, { where } from "@/services/database";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Customer, Order } from "@interfaces/index";
+import { openTelegram } from "@utils/actions";
 import { router, Stack, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 import {
@@ -90,7 +91,7 @@ const CustomerDetail = () => {
 
     fetchData();
   }, [customerId]);
-
+  console.log(customer);
   if (loading) {
     return (
       <View style={styles.center}>
@@ -148,7 +149,20 @@ const CustomerDetail = () => {
           {customer.telegram_id ? (
             <View style={styles.row}>
               <Text style={styles.label}>Telegram:</Text>
-              <Text style={styles.value}>{customer.telegram_id}</Text>
+              <View className="flex-1 flex-row items-center justify-between">
+                <Text style={styles.value}>{customer.telegram_id}</Text>
+                <Pressable
+                  onPress={() =>
+                    openTelegram(customer.telegram_id, undefined, {
+                      chatId: customerId!,
+                      title: customer.name,
+                    })
+                  }
+                  className="bg-blue-500 p-1.5 rounded-full"
+                >
+                  <MaterialIcons name="telegram" size={20} color="white" />
+                </Pressable>
+              </View>
             </View>
           ) : null}
           {customer.location && (
@@ -161,7 +175,10 @@ const CustomerDetail = () => {
                 }}
               >
                 <Text
-                  style={[styles.value, { color: "#6366f1", fontWeight: "700" }]}
+                  style={[
+                    styles.value,
+                    { color: "#6366f1", fontWeight: "700" },
+                  ]}
                 >
                   Xaritada ko'rish
                 </Text>

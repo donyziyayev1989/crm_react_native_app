@@ -1,4 +1,4 @@
-export const districs = [
+export const districts = [
   { "id": "tosh_bektemir", "name": "Bektemir", "region_id": "Toshkent sh." },
   { "id": "tosh_chilonzor", "name": "Chilonzor", "region_id": "Toshkent sh." },
   { "id": "tosh_mirobod", "name": "Mirobod", "region_id": "Toshkent sh." },

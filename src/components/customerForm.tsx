@@ -7,7 +7,7 @@ import { formatPhone } from "@/utils/format";
 import { Customer, District } from "@interfaces/index";
 import { useRouter } from "expo-router";
 import { collection, query } from "firebase/firestore";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   useCollectionData,
   useCollectionOnce,
@@ -40,18 +40,43 @@ const CustomerForm = ({
   hideOrders,
 }: CustomerFormProps) => {
   const router = useRouter();
-  const [selectedRegionId, setSelectedRegionId] = useState<string | null>(
-    initialData?.region_name || null,
-  );
-
+  const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
   // ─── Regions ──────────────────────────────────────────────────────────────
-  const [regionsSnap] = useCollectionOnce(collection(database, "regions") as any);
+  const [regionsSnap] = useCollectionOnce(
+    collection(database, "regions") as any,
+  );
+  // Viloyatlar yuklanganda yoki initialData o'zgarganda ID ni aniqlash
+  useEffect(() => {
+    if (regionsSnap && initialData?.region_name) {
+      const val = initialData.region_name.trim();
+      const normalize = (s: string) => s.toLowerCase().replace(/['` ]/g, "");
+      const normalizedValue = normalize(val);
+      
+      let found = regionsSnap.docs.find(
+        (d) =>
+          d.id === val ||
+          normalize(d.data()?.name || "") === normalizedValue
+      );
+
+      // Qo'shimcha fuzzy matching (ayniqsa Toshkent uchun)
+      if (!found && normalizedValue === "toshkent") {
+        found = regionsSnap.docs.find((d) => d.id === "toshkent_sh");
+      }
+
+      if (found) {
+        setSelectedRegionId(found.id);
+      }
+    }
+  }, [regionsSnap, initialData?.region_name]);
 
   // ─── Districts (Flat collection query) ────────────────────────────────────
   const districtsQuery = useMemo(
     () =>
       selectedRegionId
-        ? query(collection(database, "districts"), where("regionId", "==", selectedRegionId))
+        ? query(
+            collection(database, "districts"),
+            where("regionId", "==", selectedRegionId),
+          )
         : null,
     [selectedRegionId],
   );
@@ -232,7 +257,9 @@ const CustomerForm = ({
             )}
           />
           {errors.phone && (
-            <Text style={styles.errorText}>{errors.phone.message as string}</Text>
+            <Text style={styles.errorText}>
+              {errors.phone.message as string}
+            </Text>
           )}
         </View>
 
@@ -245,25 +272,48 @@ const CustomerForm = ({
             control={control}
             name="region_name"
             rules={{ required: "Viloyat kiritilishi shart" }}
-            render={({ field: { onChange, value } }) => (
-              <Select
-                data={regions}
-                placeholder="Viloyatni tanlang"
-                searchPlaceholder="Qidirish..."
-                value={value}
-                errors={errors}
-                onChange={(val) => {
-                  setSelectedRegionId(val);
-                  onChange(val);
-                  setValue("district_name", ""); // region o'zgarganda tuman resetlanadi
-                }}
-                search={true}
-                maxHeight={300}
-              />
-            )}
+            render={({ field: { onChange, value } }) => {
+              // Formadagi nomga qarab Select uchun ID ni aniqlaymiz
+              const normalize = (s: string) => s.toLowerCase().replace(/['` ]/g, "");
+              const normalizedValue = normalize(value || "");
+              let foundDoc = (regionsSnap?.docs ?? []).find(
+                (d) => 
+                  d.id === value || 
+                  normalize(d.data()?.name || "") === normalizedValue
+              );
+
+              // Toshkent uchun fuzzy match
+              if (!foundDoc && normalizedValue === "toshkent") {
+                foundDoc = (regionsSnap?.docs ?? []).find((d) => d.id === "toshkent_sh");
+              }
+
+              const currentId = foundDoc?.id || "";
+
+              return (
+                <Select
+                  data={regions}
+                  placeholder="Viloyatni tanlang"
+                  searchPlaceholder="Qidirish..."
+                  value={currentId || selectedRegionId}
+                  errors={errors}
+                  onChange={(val) => {
+                    setSelectedRegionId(val);
+                    // Formada ID emas, nomini saqlaymiz (Lead va CRM mosligi uchun)
+                    const regionName =
+                      regions.find((r) => r.value === val)?.label || val;
+                    onChange(regionName);
+                    setValue("district_name", ""); // region o'zgarganda tuman resetlanadi
+                  }}
+                  search={true}
+                  maxHeight={300}
+                />
+              );
+            }}
           />
           {errors.region_name && (
-            <Text style={styles.errorText}>{errors.region_name.message as string}</Text>
+            <Text style={styles.errorText}>
+              {errors.region_name.message as string}
+            </Text>
           )}
         </View>
 

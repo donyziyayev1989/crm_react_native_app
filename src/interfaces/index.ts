@@ -41,6 +41,10 @@ export interface Product {
   id?: string;
   name: string;
   price: number;
+  description?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+  active?: boolean;
 }
 
 export interface Region {
@@ -104,7 +108,11 @@ export interface Lead {
   name: string;
   phone: string;
   telegram_id: string;
+  product_id?: string;
+  product_name?: string;
   product_count: number;
+  region_name?: string;
+  district_name?: string;
   location?: {
     lat: number;
     lng: number;
