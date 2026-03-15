@@ -19,12 +19,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.sale",
-      "config": {
-        "googleMaps": {
-          "apiKey": "AIzaSyCU3WlXkKYHtd01OJkbf6M6zn0BSYVJPuk"
-        }
-      }
+      "package": "com.anonymous.sale"
     },
     "web": {
       "output": "static",
@@ -45,7 +40,14 @@
           }
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "@rnmapbox/maps",
+        {
+          "RNMapboxMapsImpl": "mapbox",
+          "RNMAPBOX_MAPS_DOWNLOAD_TOKEN": "sk.eyJ1IjoiZG9ueXppeWF5ZXYxOTg5IiwiYSI6ImNtbXI5dDdqMDB2bmsycnNpaHJvc2Y4emkifQ.zGo6kviHoc6Ryn2D9e9WtQ"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

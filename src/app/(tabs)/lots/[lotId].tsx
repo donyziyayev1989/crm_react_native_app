@@ -1,14 +1,13 @@
 import LostProductModal from "@/components/LostProductModal";
-import LotMap from "@/components/LotMap";
 import OrderList from "@/components/OrderList";
 import OrderModal from "@/components/OrderModal";
+import LotMapView from "@/components/LotMapView";
 import { Customer, Order, Product, ProductLot, User } from "@/interfaces";
 import db, { where } from "@/services/database";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { callPhone, openTelegram } from "@utils/actions";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { optimizeRoute } from "@/utils/optimization";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -109,35 +108,6 @@ const OrderDetail = () => {
     setCustomers((prev) => [...prev, customer]);
   };
 
-  const optimizedOrders = useMemo(() => {
-    const markers = orders
-      .map((order) => {
-        const customer = customers.find((c) => c.id === order.customer_id);
-        if (customer?.location?.lat && customer?.location?.lng) {
-          return {
-            ...order,
-            coordinate: {
-              latitude: customer.location.lat,
-              longitude: customer.location.lng,
-            },
-          };
-        }
-        return null;
-      })
-      .filter(Boolean) as any[];
-
-    console.log("[DEBUG] Orders found:", orders.length);
-    console.log("[DEBUG] Markers with coordinates:", markers.length);
-    if (markers.length > 0) {
-      console.log("[DEBUG] First marker coords:", markers[0].coordinate);
-    }
-
-    const optimized = optimizeRoute(markers);
-    const optimizedIds = optimized.map((o) => o.id);
-    const unoptimized = orders.filter((o) => !optimizedIds.includes(o.id));
-    return [...optimized, ...unoptimized];
-  }, [orders, customers]);
-
   if (loading) {
     return (
       <View style={styles.center}>
@@ -175,37 +145,7 @@ const OrderDetail = () => {
         }}
       />
 
-      {viewMode === "map" ? (
-        <View style={{ flex: 1, padding: 10 }}>
-          <LotMap orders={orders} customers={customers} products={products} />
-          <View style={{ flex: 1 }}>
-            <OrderList
-              orders={optimizedOrders}
-              customers={customers}
-              products={products}
-              lots={lot ? [lot] : []}
-              users={users}
-              onEdit={openEditModal}
-              onDelete={handleDelete}
-              onCall={callPhone}
-              onTelegram={openTelegram}
-              onOrderPress={(id) => {
-                router.push({
-                  pathname: "/orders/[orderId]",
-                  params: { orderId: id },
-                });
-              }}
-              ListHeaderComponent={() => (
-                <View style={{ paddingVertical: 10 }}>
-                  <Text style={{ fontSize: 18, fontWeight: "bold" }}>
-                    Yonalish boyicha buyurtmalar:
-                  </Text>
-                </View>
-              )}
-            />
-          </View>
-        </View>
-      ) : (
+      {viewMode === "list" ? (
         <OrderList
           orders={orders}
           customers={customers}
@@ -242,6 +182,19 @@ const OrderDetail = () => {
               <Text style={styles.addBtnText}>Buyurtma qo'shish</Text>
             </Pressable>
           )}
+        />
+      ) : (
+        <LotMapView
+          orders={orders}
+          customers={customers}
+          products={products}
+          users={users}
+          onOrderPress={(id) => {
+            router.push({
+              pathname: "/orders/[orderId]",
+              params: { orderId: id },
+            });
+          }}
         />
       )}
 

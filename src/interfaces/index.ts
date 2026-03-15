@@ -66,12 +66,18 @@ export interface Order {
   product_count: number;
   product_price: number;
   region_name: string; // ref -> regions
+  district_name?: string; // denormalized field
   date: string; // ISO date string
   rate: number;
   state: string;
   user_id: string; // ref → users
   delivery_price: number;
   note?: string;
+  location?: {
+    lat: number;
+    lng: number;
+    address?: string;
+  };
 }
 
 export interface Customer {
