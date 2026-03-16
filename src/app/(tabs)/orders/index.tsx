@@ -91,7 +91,7 @@ const AllOrders = () => {
                 setEditLine(null);
                 setAddLineModal(true);
               }}
-              className="mr-3 p-1"
+              className="p-3"
             >
               <MaterialIcons name="add-circle" size={28} color="#6366f1" />
             </Pressable>

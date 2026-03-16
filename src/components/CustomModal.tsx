@@ -106,6 +106,7 @@ const CustomModal: React.FC<CustomModalProps> = ({
       visible={visible}
       animationType="none"
       transparent
+      statusBarTranslucent
       onRequestClose={handleClose}
     >
       <KeyboardAvoidingView

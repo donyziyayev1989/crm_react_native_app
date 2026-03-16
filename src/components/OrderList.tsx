@@ -24,6 +24,9 @@ interface OrderListProps {
     chatData?: { chatId: string; title: string },
   ) => void;
   onOrderPress?: (id: string) => void;
+  selectable?: boolean;
+  selectedIds?: string[];
+  onSelectionChange?: (ids: string[]) => void;
   ListHeaderComponent?: React.ComponentType<any> | React.ReactElement | null;
   ListEmptyComponent?: React.ComponentType<any> | React.ReactElement | null;
   ListFooterComponent?: React.ComponentType<any> | React.ReactElement | null;
@@ -40,6 +43,9 @@ const OrderList: React.FC<OrderListProps> = ({
   onCall,
   onTelegram,
   onOrderPress,
+  selectable,
+  selectedIds = [],
+  onSelectionChange,
   ListHeaderComponent,
   ListEmptyComponent,
   ListFooterComponent,
@@ -196,26 +202,63 @@ const OrderList: React.FC<OrderListProps> = ({
         }
         renderItem={({ item }) => {
           const customer = customersMap[item.customer_id];
+          const isSelected = selectedIds.includes(item.id);
+
+          const toggleSelection = () => {
+            if (isSelected) {
+              onSelectionChange?.(selectedIds.filter((id) => id !== item.id));
+            } else {
+              onSelectionChange?.([...selectedIds, item.id]);
+            }
+          };
+
           return (
             <View
-              style={styles.itemWrapper}
-              className="shadow-sm shadow-slate-400/30"
+              className={`mb-3 shadow-sm shadow-slate-400/30 ${isSelected ? "border-1 border-indigo-500" : ""}`}
             >
-              <ReanimatedSwipeable
-                renderRightActions={() => renderRightPanel(item)}
-              >
-                <Pressable onPress={() => onOrderPress?.(item.id)}>
-                  <OrderCard
-                    item={item}
-                    title={customer?.name || "Noma'lum"}
-                    subtitle={formatPhone(customer?.phone || "")}
-                    productName={
-                      productsMap[item.product_id] || "Noma'lum mahsulot"
-                    }
-                    userName={usersMap[item.user_id] || "Noma'lum"}
-                  />
-                </Pressable>
-              </ReanimatedSwipeable>
+              <View style={styles.itemRow}>
+                {selectable && (
+                  <Pressable
+                    onPress={toggleSelection}
+                    style={styles.checkboxContainer}
+                  >
+                    <MaterialIcons
+                      name={
+                        isSelected ? "check-box" : "check-box-outline-blank"
+                      }
+                      size={24}
+                      color={isSelected ? "#6366f1" : "#9ca3af"}
+                    />
+                  </Pressable>
+                )}
+                <View style={{ flex: 1 }}>
+                  <ReanimatedSwipeable
+                    renderRightActions={() => renderRightPanel(item)}
+                    enabled={!selectable} // Disable swipe when in selection mode for better UX
+                  >
+                    <Pressable
+                      onPress={() => {
+                        if (selectable) {
+                          toggleSelection();
+                        } else {
+                          onOrderPress?.(item.id);
+                        }
+                      }}
+                    >
+                      <OrderCard
+                        item={item}
+                        title={customer?.name || "Noma'lum"}
+                        subtitle={formatPhone(customer?.phone || "")}
+                        productName={
+                          productsMap[item.product_id] || "Noma'lum mahsulot"
+                        }
+                        className={isSelected ? "bg-indigo-500/10" : ""}
+                        userName={usersMap[item.user_id] || "Noma'lum"}
+                      />
+                    </Pressable>
+                  </ReanimatedSwipeable>
+                </View>
+              </View>
             </View>
           );
         }}
@@ -268,7 +311,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   listContent: {
-    padding: 12,
+    padding: 16,
     paddingBottom: 100,
   },
   sectionHeader: {
@@ -306,5 +349,15 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderRadius: 16,
     overflow: "hidden",
+  },
+  itemRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  checkboxContainer: {
+    paddingLeft: 12,
+    paddingRight: 4,
+    justifyContent: "center",
+    alignItems: "center",
   },
 });

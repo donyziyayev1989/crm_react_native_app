@@ -1,8 +1,15 @@
 import { auth } from "@/firebase/firebase";
-import { Customer, Order, Product, ProductLot, Region } from "@/interfaces";
-import db, { orderBy } from "@/services/database";
+import {
+  Customer,
+  District,
+  Order,
+  Product,
+  ProductLot,
+  Region,
+} from "@/interfaces";
+import db, { orderBy, where } from "@/services/database";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -27,6 +34,7 @@ const emptyForm = {
   lotId: "",
   customer_id: "",
   region_name: "",
+  district_name: "",
   product_id: "",
   product_count: "",
   product_price: "",
@@ -62,7 +70,59 @@ const OrderModal: React.FC<OrderModalProps> = ({
   const [customers, setCustomers] = useState<(Customer & { id: string })[]>([]);
   const [products, setProducts] = useState<(Product & { id: string })[]>([]);
   const [regions, setRegions] = useState<(Region & { id: string })[]>([]);
+  const [districts, setDistricts] = useState<(District & { id: string })[]>([]);
   const [lots, setLots] = useState<(ProductLot & { id: string })[]>([]);
+
+  const fetchDistrictsByRegionName = useCallback(
+    async (regionName: string) => {
+      if (!regionName) {
+        setDistricts([]);
+        return [];
+      }
+      const region = regions.find((r) => r.name.trim() === regionName.trim());
+      if (region?.id) {
+        const ds = (await db.districts.list(
+          where("regionId", "==", region.id),
+          orderBy("name", "asc"),
+        )) as (District & { id: string })[];
+        setDistricts(ds);
+        return ds;
+      }
+      setDistricts([]);
+      return [];
+    },
+    [regions],
+  );
+
+  const handleCustomerSelect = useCallback(
+    async (customerId: string) => {
+      const cust = customers.find((c) => c.id === customerId);
+      if (!cust) {
+        setForm((f) => ({ ...f, customer_id: customerId }));
+        return;
+      }
+
+      // 1. Set Customer and Region first
+      setForm((f) => ({
+        ...f,
+        customer_id: customerId,
+        region_name: cust.region_name || f.region_name,
+        district_name: "", // Reset district while loading new options
+      }));
+
+      // 2. Fetch and Wait for districts to be in state
+      if (cust.region_name) {
+        await fetchDistrictsByRegionName(cust.region_name);
+
+        // 3. Now set the district (the Select component will now find it in its data)
+        setForm((f) => ({
+          ...f,
+          district_name: cust.district_name || "",
+        }));
+      }
+    },
+    [customers, fetchDistrictsByRegionName],
+  );
 
   useEffect(() => {
     if (visible) {
@@ -88,28 +148,50 @@ const OrderModal: React.FC<OrderModalProps> = ({
   }, [visible]);
 
   useEffect(() => {
-    if (editLine && visible) {
-      setForm({
-        lotId: editLine.lotId || "",
-        customer_id: editLine.customer_id,
-        region_name: editLine.region_name || "",
-        product_id: editLine.product_id,
-        product_count: String(editLine.product_count),
-        product_price: String(editLine.product_price),
-        rate: String(editLine.rate),
-        state: editLine.state,
-        delivery_price: String(editLine.delivery_price),
-        note: editLine.note || "",
-      });
-    } else if (visible) {
-      setForm({
-        ...emptyForm,
-        lotId: lotId || "",
-        customer_id: initialCustomer?.id || "",
-        region_name: initialCustomer?.region_name || "",
-      });
-    }
-  }, [editLine, visible, initialCustomer, lotId]);
+    const init = async () => {
+      if (!visible || regions.length === 0) return;
+
+      if (editLine) {
+        if (editLine.region_name) {
+          await fetchDistrictsByRegionName(editLine.region_name);
+        }
+        setForm({
+          lotId: editLine.lotId || "",
+          customer_id: editLine.customer_id,
+          region_name: editLine.region_name || "",
+          district_name: editLine.district_name || "",
+          product_id: editLine.product_id,
+          product_count: String(editLine.product_count),
+          product_price: String(editLine.product_price),
+          rate: String(editLine.rate),
+          state: editLine.state,
+          delivery_price: String(editLine.delivery_price),
+          note: editLine.note || "",
+        });
+      } else if (initialCustomer) {
+        if (initialCustomer.region_name) {
+          await fetchDistrictsByRegionName(initialCustomer.region_name);
+        }
+        setForm({
+          ...emptyForm,
+          lotId: lotId || "",
+          customer_id: initialCustomer.id || "",
+          region_name: initialCustomer.region_name || "",
+          district_name: initialCustomer.district_name || "",
+        });
+      } else {
+        setForm({ ...emptyForm, lotId: lotId || "" });
+      }
+    };
+    init();
+  }, [
+    editLine,
+    visible,
+    initialCustomer,
+    lotId,
+    regions.length,
+    fetchDistrictsByRegionName,
+  ]);
 
   const customerOptions = useMemo(
     () =>
@@ -121,8 +203,12 @@ const OrderModal: React.FC<OrderModalProps> = ({
     [products],
   );
   const regionOptions = useMemo(
-    () => regions.map((r) => ({ label: r.name, value: r.id! })),
+    () => regions.map((r) => ({ label: r.name, value: r.name })),
     [regions],
+  );
+  const districtOptions = useMemo(
+    () => districts.map((d) => ({ label: d.name, value: d.name })),
+    [districts],
   );
   const lotOptions = useMemo(
     () => lots.map((o) => ({ label: o.name, value: o.id! })),
@@ -131,10 +217,6 @@ const OrderModal: React.FC<OrderModalProps> = ({
 
   const handleSave = async () => {
     const targetLotId = lotId || form.lotId;
-    if (!targetLotId) {
-      Alert.alert("Xato", "Partiya tanlanishi shart");
-      return;
-    }
     if (!form.customer_id || !form.product_id || !form.product_count) {
       Alert.alert("Xato", "Mijoz, mahsulot va miqdor to'ldirilishi shart");
       return;
@@ -145,6 +227,7 @@ const OrderModal: React.FC<OrderModalProps> = ({
         lotId: targetLotId,
         customer_id: form.customer_id,
         region_name: form.region_name || "",
+        district_name: form.district_name || "",
         product_id: form.product_id,
         product_count: Number(form.product_count),
         product_price: Number(form.product_price) || 0,
@@ -185,7 +268,7 @@ const OrderModal: React.FC<OrderModalProps> = ({
     onClose();
   };
 
-  const handleCustomerCreated = (
+  const handleCustomerCreated = async (
     customerId: string,
     customerData: Customer,
   ) => {
@@ -195,7 +278,16 @@ const OrderModal: React.FC<OrderModalProps> = ({
       ...f,
       customer_id: customerId,
       region_name: customerData.region_name || f.region_name,
+      district_name: "", // Reset temporarily
     }));
+
+    if (customerData.region_name) {
+      await fetchDistrictsByRegionName(customerData.region_name);
+      setForm((f) => ({
+        ...f,
+        district_name: customerData.district_name || f.district_name,
+      }));
+    }
     setAddCustomerModal(false);
     if (onCustomerAdded) {
       onCustomerAdded(newCustomer);
@@ -225,6 +317,7 @@ const OrderModal: React.FC<OrderModalProps> = ({
                 search={true}
                 maxHeight={280}
                 value={form.lotId || null}
+                isInModal={true}
                 onChange={(v) => setForm((f) => ({ ...f, lotId: v }))}
               />
             </>
@@ -243,14 +336,8 @@ const OrderModal: React.FC<OrderModalProps> = ({
                     search
                     maxHeight={280}
                     value={form.customer_id || null}
-                    onChange={(v) => {
-                      const cust = customers.find((c) => c.id === v);
-                      setForm((f) => ({
-                        ...f,
-                        customer_id: v,
-                        region_name: cust?.region_name || f.region_name,
-                      }));
-                    }}
+                    isInModal={true}
+                    onChange={handleCustomerSelect}
                   />
                 </View>
                 <Pressable
@@ -269,7 +356,24 @@ const OrderModal: React.FC<OrderModalProps> = ({
                 search={false}
                 maxHeight={280}
                 value={form.region_name || null}
-                onChange={(v) => setForm((f) => ({ ...f, region_name: v }))}
+                isInModal={true}
+                onChange={async (v) => {
+                  setForm((f) => ({ ...f, region_name: v, district_name: "" }));
+                  // Fetch districts for selected region
+                  await fetchDistrictsByRegionName(v);
+                }}
+              />
+
+              <Text style={styles.fieldLabel}>Tuman</Text>
+              <Select
+                data={districtOptions}
+                placeholder="Tumanni tanlang"
+                searchPlaceholder="Qidirish..."
+                search={false}
+                maxHeight={280}
+                value={form.district_name || null}
+                isInModal={true}
+                onChange={(v) => setForm((f) => ({ ...f, district_name: v }))}
               />
             </>
           )}
@@ -283,6 +387,7 @@ const OrderModal: React.FC<OrderModalProps> = ({
             search={false}
             maxHeight={280}
             value={form.product_id}
+            isInModal={true}
             onChange={(v) => {
               const selectedProduct = products.find((p) => p.id === v);
               setForm((f) => ({
@@ -418,6 +523,7 @@ const OrderModal: React.FC<OrderModalProps> = ({
             onSuccess={handleCustomerCreated}
             onCancel={() => setAddCustomerModal(true)}
             hideOrders={true}
+            isInModal={true}
           />
         </CustomModal>
       )}

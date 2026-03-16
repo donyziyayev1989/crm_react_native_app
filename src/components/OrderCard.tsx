@@ -12,6 +12,7 @@ export interface OrderCardProps {
   topIconName?: keyof typeof MaterialIcons.glyphMap;
   productName: string;
   userName?: string;
+  className?: string;
 }
 
 /**
@@ -25,9 +26,10 @@ const OrderCard: React.FC<OrderCardProps> = ({
   topIconName = "person",
   productName,
   userName = "Noma'lum",
+  className,
 }) => {
   return (
-    <Card>
+    <Card className={className}>
       {/* Header: Title and status */}
       <View className="flex-row justify-between items-center mb-2">
         <View style={styles.infoItem}>

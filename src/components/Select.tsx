@@ -3,6 +3,7 @@ import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
+  StatusBar,
   StyleSheet,
   Text,
   View,
@@ -28,6 +29,7 @@ interface SelectProps {
   name?: string;
   errors?: any;
   disable?: boolean;
+  isInModal?: boolean;
   /** Bir vaqtda nechta element yuklansin (default: 20) */
   pageSize?: number;
 }
@@ -46,6 +48,7 @@ const Select = ({
   name,
   errors,
   disable,
+  isInModal,
   pageSize = 20,
 }: SelectProps) => {
   const [value, setValue] = useState<any>(null);
@@ -145,12 +148,17 @@ const Select = ({
         value={selected}
         search={search}
         disable={disable}
+        containerStyle={[
+          styles.dropdownContainer,
+          isInModal && { marginTop: -(StatusBar.currentHeight || 0) },
+        ]}
         searchPlaceholder={searchPlaceholder}
         onChangeText={handleSearch}
         onChange={(item) => {
           setSelected(item);
           if (onChange) onChange(item);
         }}
+        dropdownPosition="auto"
         flatListProps={flatListProps}
         renderRightIcon={() => (
           <MaterialIcons
@@ -198,6 +206,13 @@ const Select = ({
       }}
       onFocus={() => setIsFocus(true)}
       onBlur={handleClose}
+      // @ts-ignore
+      statusBarIsTranslucent={isInModal}
+      dropdownPosition="auto"
+      containerStyle={[
+        styles.dropdownContainer,
+        isInModal && { marginTop: -(StatusBar.currentHeight || 0) },
+      ]}
       flatListProps={flatListProps}
       renderRightIcon={() =>
         isFocus ? (
@@ -223,9 +238,6 @@ const Select = ({
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  container: {
-    margin: 16,
-  },
   inputSearchStyle: {
     height: 40,
     fontSize: 16,
@@ -239,7 +251,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#111827",
     backgroundColor: "#fff",
-    boxShadow: "0px 1px 1.41px rgba(85, 85, 85, 0.1)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
     elevation: 2,
   },
   icon: {
@@ -262,7 +277,10 @@ const styles = StyleSheet.create({
     marginRight: 12,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    boxShadow: "0px 1px 1.41px rgba(85, 85, 85, 0.1)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
     elevation: 2,
   },
   textSelectedStyle: {
@@ -275,7 +293,17 @@ const styles = StyleSheet.create({
   },
   errorInput: {
     borderColor: "#ef4444",
-    boxShadow: "0px 1px 1.41px rgba(239, 68, 68, 0.1)",
+  },
+  dropdownContainer: {
+    borderRadius: 10,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 5,
   },
   footer: {
     paddingVertical: 10,

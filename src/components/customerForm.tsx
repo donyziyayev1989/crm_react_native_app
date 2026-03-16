@@ -31,6 +31,7 @@ interface CustomerFormProps {
   onCancel?: () => void;
   initialData?: Customer & { id?: string };
   hideOrders?: boolean;
+  isInModal?: boolean;
 }
 
 const CustomerForm = ({
@@ -38,6 +39,7 @@ const CustomerForm = ({
   onCancel,
   initialData,
   hideOrders,
+  isInModal,
 }: CustomerFormProps) => {
   const router = useRouter();
   const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
@@ -296,6 +298,7 @@ const CustomerForm = ({
                   searchPlaceholder="Qidirish..."
                   value={currentId || selectedRegionId}
                   errors={errors}
+                  isInModal={isInModal}
                   onChange={(val) => {
                     setSelectedRegionId(val);
                     // Formada ID emas, nomini saqlaymiz (Lead va CRM mosligi uchun)
@@ -331,6 +334,7 @@ const CustomerForm = ({
                 search={true}
                 maxHeight={300}
                 value={value}
+                isInModal={isInModal}
                 onChange={(val) => {
                   onChange(val);
                 }}
@@ -354,6 +358,7 @@ const CustomerForm = ({
                   maxHeight={300}
                   value={value}
                   multiSelect={true}
+                  isInModal={isInModal}
                   onChange={(val: string[]) => {
                     onChange(val);
                   }}
@@ -377,6 +382,7 @@ const CustomerForm = ({
                 maxHeight={300}
                 value={value}
                 multiSelect={true}
+                isInModal={isInModal}
                 onChange={(val: string[]) => {
                   onChange(val);
                 }}

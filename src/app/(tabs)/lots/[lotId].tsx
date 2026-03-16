@@ -1,13 +1,17 @@
 import LostProductModal from "@/components/LostProductModal";
 import OrderList from "@/components/OrderList";
 import OrderModal from "@/components/OrderModal";
-import LotMapView from "@/components/LotMapView";
 import { Customer, Order, Product, ProductLot, User } from "@/interfaces";
 import db, { where } from "@/services/database";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { callPhone, openTelegram } from "@utils/actions";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import {
+  Stack,
+  useFocusEffect,
+  useLocalSearchParams,
+  useRouter,
+} from "expo-router";
+import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -36,28 +40,22 @@ const OrderDetail = () => {
     null,
   );
   const [addLostModal, setAddLostModal] = useState(false);
-  const [viewMode, setViewMode] = useState<"list" | "map">("list");
+  const [isSelectMode, setIsSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  useEffect(() => {
-    if (!lotId) return;
-    const fetchData = async () => {
-      setLoading(true);
+  const fetchData = useCallback(
+    async (silent = false) => {
+      if (!lotId) return;
+      if (!silent) setLoading(true);
       try {
-        const [
-          lotData,
-          ordersData,
-          customersData,
-          productsData,
-          regionsData,
-          usersData,
-        ] = await Promise.all([
-          db.lots.get(lotId),
-          db.orders.list(where("lotId", "==", lotId)),
-          db.customers.list(),
-          db.products.list(),
-          db.regions.list(),
-          db.users.list(),
-        ]);
+        const [lotData, ordersData, customersData, productsData, usersData] =
+          await Promise.all([
+            db.lots.get(lotId),
+            db.orders.list(where("lotId", "==", lotId)),
+            db.customers.list(),
+            db.products.list(),
+            db.users.list(),
+          ]);
         setLot(lotData as ProductLot & { id: string });
         setOrders(ordersData as (Order & { id: string })[]);
         setCustomers(customersData as (Customer & { id: string })[]);
@@ -66,12 +64,17 @@ const OrderDetail = () => {
       } catch (e) {
         console.error(e);
       } finally {
-        setLoading(false);
+        if (!silent) setLoading(false);
       }
-    };
-    fetchData();
-    console.log(orders);
-  }, [lotId]);
+    },
+    [lotId],
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchData(orders.length > 0);
+    }, [fetchData, orders.length]),
+  );
 
   const handleSuccess = (order: Order & { id: string }, isEdit: boolean) => {
     if (isEdit) {
@@ -79,6 +82,16 @@ const OrderDetail = () => {
     } else {
       setOrders((prev) => [...prev, order]);
     }
+  };
+
+  const openMap = (ids?: string[]) => {
+    router.push({
+      pathname: "/lots/[lotId]/map",
+      params: {
+        lotId,
+        selectedIds: ids ? ids.join(",") : "",
+      },
+    });
   };
 
   const handleDelete = (order: Order & { id: string }) => {
@@ -123,81 +136,104 @@ const OrderDetail = () => {
           title: lot?.name ?? "Partiya tafsiloti",
           headerRight: () => (
             <View className="flex-row items-center">
-              <Pressable
-                onPress={() => setViewMode(viewMode === "list" ? "map" : "list")}
-                className="p-3"
-              >
-                <MaterialIcons
-                  name={viewMode === "list" ? "map" : "list"}
-                  size={24}
-                  color="#6366f1"
-                />
-              </Pressable>
-              <Pressable onPress={() => setAddLostModal(true)} className="p-3">
-                <MaterialIcons
-                  name="remove-circle-outline"
-                  size={24}
-                  color="#ef4444"
-                />
-              </Pressable>
+              {isSelectMode ? (
+                <>
+                  <Pressable
+                    onPress={() => {
+                      if (selectedIds.length > 0) {
+                        openMap(selectedIds);
+                        // Don't clear selection yet, let the user see them when they come back
+                      } else {
+                        Alert.alert("Xato", "Kamida bitta buyurtmani tanlang");
+                      }
+                    }}
+                    className="p-3"
+                  >
+                    <MaterialIcons name="map" size={24} color="#10b981" />
+                  </Pressable>
+                  <Pressable
+                    onPress={() => {
+                      setIsSelectMode(false);
+                      setSelectedIds([]);
+                    }}
+                    className="p-3"
+                  >
+                    <MaterialIcons name="close" size={24} color="#ef4444" />
+                  </Pressable>
+                </>
+              ) : (
+                <>
+                  <Pressable onPress={() => openMap()} className="p-3">
+                    <MaterialIcons name="map" size={24} color="#6366f1" />
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setIsSelectMode(true)}
+                    className="p-3"
+                  >
+                    <MaterialIcons name="checklist" size={24} color="#6366f1" />
+                  </Pressable>
+                </>
+              )}
             </View>
           ),
         }}
       />
 
-      {viewMode === "list" ? (
-        <OrderList
-          orders={orders}
-          customers={customers}
-          products={products}
-          lots={lot ? [lot] : []}
-          users={users}
-          onEdit={openEditModal}
-          onDelete={handleDelete}
-          onCall={callPhone}
-          onTelegram={openTelegram}
-          onOrderPress={(id) => {
-            router.push({
-              pathname: "/orders/[orderId]",
-              params: { orderId: id },
-            });
-          }}
-          ListEmptyComponent={() => (
-            <View style={styles.empty}>
-              <MaterialIcons name="inbox" size={40} color="#d1d5db" />
-              <Text style={styles.emptyText}>
-                Bu partiyada buyurtmalar mavjud emas
-              </Text>
-            </View>
-          )}
-          ListFooterComponent={() => (
+      <OrderList
+        orders={orders}
+        customers={customers}
+        products={products}
+        lots={lot ? [lot] : []}
+        users={users}
+        onEdit={openEditModal}
+        onDelete={handleDelete}
+        onCall={callPhone}
+        onTelegram={openTelegram}
+        selectable={isSelectMode}
+        selectedIds={selectedIds}
+        onSelectionChange={setSelectedIds}
+        onOrderPress={(id) => {
+          router.push({
+            pathname: "/orders/[orderId]",
+            params: { orderId: id },
+          });
+        }}
+        ListEmptyComponent={() => (
+          <View style={styles.empty}>
+            <MaterialIcons name="inbox" size={40} color="#d1d5db" />
+            <Text style={styles.emptyText}>
+              Bu partiyada buyurtmalar mavjud emas
+            </Text>
+          </View>
+        )}
+        ListHeaderComponent={() => (
+          <View className="flex-row items-center gap-3 mb-3">
             <Pressable
-              style={styles.addBtn}
+              onPress={() => setAddLostModal(true)}
+              style={styles.btn}
+              className="flex-1 bg-danger"
+            >
+              <MaterialIcons
+                name="remove-circle-outline"
+                size={20}
+                color="#fff"
+              />
+              <Text style={styles.btnText}>Yo'qotilgan</Text>
+            </Pressable>
+            <Pressable
+              style={styles.btn}
+              className="p-3 flex-1 bg-primary"
               onPress={() => {
                 setEditLine(null);
                 setAddLineModal(true);
               }}
             >
               <MaterialIcons name="add" size={20} color="#fff" />
-              <Text style={styles.addBtnText}>Buyurtma qo'shish</Text>
+              <Text style={styles.btnText}>Buyurtma qo'shish</Text>
             </Pressable>
-          )}
-        />
-      ) : (
-        <LotMapView
-          orders={orders}
-          customers={customers}
-          products={products}
-          users={users}
-          onOrderPress={(id) => {
-            router.push({
-              pathname: "/orders/[orderId]",
-              params: { orderId: id },
-            });
-          }}
-        />
-      )}
-
+          </View>
+        )}
+      />
       <OrderModal
         visible={addLineModal}
         onClose={() => {
@@ -232,15 +268,14 @@ const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   empty: { alignItems: "center", paddingVertical: 40, gap: 8 },
   emptyText: { color: "#9ca3af", fontSize: 14 },
-  addBtn: {
+  btn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#6366f1",
     borderRadius: 12,
     padding: 14,
     gap: 8,
     marginTop: 8,
   },
-  addBtnText: { color: "#fff", fontSize: 15, fontWeight: "600" },
+  btnText: { color: "#fff", fontSize: 15, fontWeight: "600" },
 });

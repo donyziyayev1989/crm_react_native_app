@@ -1,15 +1,9 @@
 import Card from "@/components/Card";
-import { Customer, Order, Product, User, ProductLot } from "@/interfaces";
-import { formatDate, formatMoney, formatPhone } from "@utils/format";
-import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import React from "react";
-import {
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { Customer, Order, Product, ProductLot, User } from "@/interfaces";
 import { callPhone } from "@utils/actions";
+import { formatDate, formatMoney, formatPhone } from "@utils/format";
+import React from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 interface OrderDetailViewProps {
   order: Order & { id: string };
@@ -47,6 +41,12 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({
         </Text>
       </View>
       <View style={styles.row}>
+        <Text style={styles.label}>Tuman:</Text>
+        <Text style={styles.value}>
+          {order.district_name || customer?.district_name || "—"}
+        </Text>
+      </View>
+      <View style={styles.row}>
         <Text style={styles.label}>Partiya:</Text>
         <Text style={styles.value}>{lot?.name || "—"}</Text>
       </View>
@@ -60,17 +60,21 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({
       </View>
       <View style={styles.row}>
         <Text style={styles.label}>Narx:</Text>
-        <Text style={styles.value}>{formatMoney(order.product_price)} so'm</Text>
+        <Text style={styles.value}>
+          {formatMoney(order.product_price)} so'm
+        </Text>
       </View>
       <View style={styles.row}>
         <Text style={styles.label}>Yetkazish:</Text>
-        <Text style={styles.value}>{formatMoney(order.delivery_price)} so'm</Text>
+        <Text style={styles.value}>
+          {formatMoney(order.delivery_price)} so'm
+        </Text>
       </View>
       <View style={styles.row}>
         <Text style={styles.label}>Jami:</Text>
         <Text style={[styles.value, { fontWeight: "bold" }]}>
           {formatMoney(
-            order.product_count * order.product_price + order.delivery_price
+            order.product_count * order.product_price + order.delivery_price,
           )}{" "}
           so'm
         </Text>
@@ -81,12 +85,12 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({
           {order.state === "new"
             ? "Yangi"
             : order.state === "done"
-            ? "Bajarildi"
-            : order.state === "cancel"
-            ? "Bekor qilindi"
-            : order.state === "reschedule"
-            ? "Reschedule"
-            : order.state}
+              ? "Bajarildi"
+              : order.state === "cancel"
+                ? "Bekor qilindi"
+                : order.state === "reschedule"
+                  ? "Reschedule"
+                  : order.state}
         </Text>
       </View>
       <View style={styles.row}>
