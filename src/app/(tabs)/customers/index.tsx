@@ -2,38 +2,20 @@ import db from "@/services/database";
 import CustomerList from "@components/CustomerList";
 import Search from "@components/Search";
 import { Customer } from "@interfaces/index";
-import { useFocusEffect } from "expo-router";
-import React, { useCallback, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
 
 const Customers = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [loading, setLoading] = useState(false);
-  useFocusEffect(
-    useCallback(() => {
-      let isActive = true;
+  const [loading, setLoading] = useState(true);
 
-      const fetchCustomers = async () => {
-        setLoading(true);
-        try {
-          const data = await db.customers.list();
-          if (isActive) {
-            setCustomers(data);
-          }
-        } finally {
-          if (isActive) {
-            setLoading(false);
-          }
-        }
-      };
-
-      fetchCustomers();
-
-      return () => {
-        isActive = false;
-      };
-    }, []),
-  );
+  useEffect(() => {
+    const unsubscribe = db.customers.watch((data) => {
+      setCustomers(data);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
 
   return (
     <View className="flex-1">

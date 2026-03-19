@@ -3,8 +3,8 @@ import { ProductLot } from "@/interfaces";
 import db, { orderBy } from "@/services/database";
 import { formatDate } from "@/utils/format";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { Stack, useFocusEffect, useRouter } from "expo-router";
-import React, { useCallback, useRef, useState } from "react";
+import { Stack, useRouter } from "expo-router";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -19,7 +19,7 @@ import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeabl
 const Lots = () => {
   const [lots, setLots] = useState<(ProductLot & { id: string })[]>([]);
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const rowRefs = useRef(new Map<string, any>());
   const prevOpenedRow = useRef<string | null>(null);
@@ -32,17 +32,16 @@ const Lots = () => {
     prevOpenedRow.current = id;
   };
 
-  useFocusEffect(
-    useCallback(() => {
-      const fetchLots = async () => {
-        setLoading(true);
-        const data = await db.lots.list(orderBy("date", "desc"));
+  useEffect(() => {
+    const unsubscribe = db.lots.watch(
+      (data) => {
         setLots(data as (ProductLot & { id: string })[]);
         setLoading(false);
-      };
-      fetchLots();
-    }, []),
-  );
+      },
+      orderBy("date", "desc"),
+    );
+    return () => unsubscribe();
+  }, []);
 
   const handleDelete = (id: string) => {
     Alert.alert("O'chirish", "Haqiqatan ham bu partiyani o'chirmoqchimisiz?", [

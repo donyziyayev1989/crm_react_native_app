@@ -35,27 +35,29 @@ const Search = ({ initialValue = '' } : { initialValue?: string }) => {
   };
 
   useEffect(() => {
-    const fetchLots = async () => {
-      // Partiyalarni (Lots) yuklash
-      const data = await db.lots.list();
+    // Partiyalarni (Lots) real-time kuzatish
+    const unsubLots = db.lots.watch((data) => {
       const lotsData = data.map((lot: any) => ({
         label: lot.name,
         value: lot.id,
         date: lot.date,
       }));
       setAllLots(lotsData);
-    };
-    const fetchAllRegions = async () => {
-      const data = await db.regions.list();
+    });
+
+    // Viloyatlarni real-time kuzatish
+    const unsubRegions = db.regions.watch((data) => {
       const regionsData = data.map((region: any) => ({
         label: region.name,
         value: region.name,
       }));
       setAllRegions(regionsData);
-    };
+    });
 
-    fetchLots();
-    fetchAllRegions();
+    return () => {
+      unsubLots();
+      unsubRegions();
+    };
   }, []);
 
   return (

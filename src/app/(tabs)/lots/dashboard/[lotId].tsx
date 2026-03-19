@@ -33,27 +33,35 @@ const OrderDashboard = () => {
 
   useEffect(() => {
     if (!lotId) return;
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        const [lotData, ordersData, lostData] = await Promise.all([
-          db.lots.get(lotId),
-          db.orders.list(where("lotId", "==", lotId)),
-          db.lost_products.list(
-            where("lotId", "==", lotId),
-            orderBy("timestamp", "asc"),
+    setLoading(true);
+
+    const unsubLot = db.lots.watch((data) => {
+      const found = data.find((l) => l.id === lotId);
+      if (found) setLot(found as ProductLot & { id: string });
+    }, where("__name__", "==", lotId));
+
+    const unsubOrders = db.orders.watch((data) => {
+      setOrders(data as (Order & { id: string })[]);
+    }, where("lotId", "==", lotId));
+
+    const unsubLost = db.lost_products.watch(
+      (data) => {
+        setLostProducts(
+          (data as (LostProduct & { id: string })[]).sort(
+            (a, b) => a.timestamp - b.timestamp,
           ),
-        ]);
-        setLot(lotData as ProductLot & { id: string });
-        setOrders(ordersData as (Order & { id: string })[]);
-        setLostProducts(lostData as (LostProduct & { id: string })[]);
-      } catch (e) {
-        console.error(e);
-      } finally {
+        );
         setLoading(false);
-      }
+      },
+      where("lotId", "==", lotId),
+      orderBy("timestamp", "asc"),
+    );
+
+    return () => {
+      unsubLot();
+      unsubOrders();
+      unsubLost();
     };
-    fetchData();
   }, [lotId]);
 
   const stats = useMemo(() => {

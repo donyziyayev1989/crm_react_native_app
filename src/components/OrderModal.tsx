@@ -8,7 +8,6 @@ import {
   Region,
 } from "@/interfaces";
 import db, { orderBy, where } from "@/services/database";
-import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -22,7 +21,7 @@ import {
 } from "react-native";
 import { Rating } from "react-native-ratings";
 import CustomModal from "./CustomModal";
-import CustomerForm from "./CustomerForm";
+import PhoneInput from "./PhoneInput";
 import Select from "./Select";
 
 /**
@@ -33,6 +32,8 @@ import Select from "./Select";
 const emptyForm = {
   lotId: "",
   customer_id: "",
+  customer_phone: "",
+  customer_name: "",
   region_name: "",
   district_name: "",
   product_id: "",
@@ -50,7 +51,6 @@ interface OrderModalProps {
   lotId?: string; // Bu amalda lotId (Partiya IDsi)
   editLine?: (Order & { id: string }) | null;
   onSuccess?: (order: Order & { id: string }, isEdit: boolean) => void;
-  onCustomerAdded?: (customer: Customer & { id: string }) => void;
   initialCustomer?: (Customer & { id: string }) | null;
 }
 
@@ -60,12 +60,11 @@ const OrderModal: React.FC<OrderModalProps> = ({
   lotId,
   editLine,
   onSuccess,
-  onCustomerAdded,
   initialCustomer,
 }) => {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
-  const [addCustomerModal, setAddCustomerModal] = useState(false);
+  const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
 
   const [customers, setCustomers] = useState<(Customer & { id: string })[]>([]);
   const [products, setProducts] = useState<(Product & { id: string })[]>([]);
@@ -79,7 +78,10 @@ const OrderModal: React.FC<OrderModalProps> = ({
         setDistricts([]);
         return [];
       }
-      const region = regions.find((r) => r.name.trim() === regionName.trim());
+      const region = regions.find(
+        (r: Region) =>
+          r.name.trim().toLowerCase() === regionName.trim().toLowerCase(),
+      );
       if (region?.id) {
         const ds = (await db.districts.list(
           where("regionId", "==", region.id),
@@ -94,70 +96,117 @@ const OrderModal: React.FC<OrderModalProps> = ({
     [regions],
   );
 
-  const handleCustomerSelect = useCallback(
-    async (customerId: string) => {
-      const cust = customers.find((c) => c.id === customerId);
-      if (!cust) {
-        setForm((f) => ({ ...f, customer_id: customerId }));
-        return;
+  const handlePhoneChange = useCallback(
+    async (phone: string) => {
+      // Normalizing phone (get last 9 digits for Uzbekistan matching)
+      const digitsOnly = phone.replace(/\D/g, "");
+
+      if (digitsOnly.length >= 9) {
+        const last9Digits = digitsOnly.slice(-9);
+        const found = customers.find((c: Customer & { id: string }) => {
+          const cDigits = c.phone.replace(/\D/g, "");
+          return cDigits.slice(-9) === last9Digits;
+        });
+
+        if (found) {
+          let regId = "";
+          if (found.region_name) {
+            const reg = regions.find(
+              (r) =>
+                r.name.trim().toLowerCase() ===
+                found.region_name.trim().toLowerCase(),
+            );
+            if (reg) {
+              regId = reg.id!;
+              setSelectedRegionId(regId);
+              await fetchDistrictsByRegionName(reg.name);
+            }
+          }
+
+          setForm((f: typeof emptyForm) => ({
+            ...f,
+            customer_phone: phone,
+            customer_id: found.id!,
+            customer_name: found.name,
+            region_name: found.region_name || f.region_name,
+            district_name: found.district_name || "",
+          }));
+          return;
+        }
       }
 
-      // 1. Set Customer and Region first
-      setForm((f) => ({
+      // If not found or phone too short, just update phone and clear ID
+      setForm((f: typeof emptyForm) => ({
         ...f,
-        customer_id: customerId,
-        region_name: cust.region_name || f.region_name,
-        district_name: "", // Reset district while loading new options
+        customer_phone: phone,
+        customer_id: "",
       }));
-
-      // 2. Fetch and Wait for districts to be in state
-      if (cust.region_name) {
-        await fetchDistrictsByRegionName(cust.region_name);
-
-        // 3. Now set the district (the Select component will now find it in its data)
-        setForm((f) => ({
-          ...f,
-          district_name: cust.district_name || "",
-        }));
-      }
     },
-    [customers, fetchDistrictsByRegionName],
+    [customers, fetchDistrictsByRegionName, regions],
   );
 
   useEffect(() => {
-    if (visible) {
-      const fetchData = async () => {
-        try {
-          const [customersData, productsData, regionsData, lotsData] =
-            await Promise.all([
-              db.customers.list(),
-              db.products.list(),
-              db.regions.list(),
-              db.lots.list(orderBy("date", "desc")),
-            ]);
-          setCustomers(customersData as (Customer & { id: string })[]);
-          setProducts(productsData as (Product & { id: string })[]);
-          setRegions(regionsData as (Region & { id: string })[]);
-          setLots(lotsData as (ProductLot & { id: string })[]);
-        } catch (e) {
-          console.error(e);
-        }
-      };
-      fetchData();
-    }
+    if (!visible) return;
+
+    const unsubCustomers = db.customers.watch((data) => {
+      setCustomers(data as (Customer & { id: string })[]);
+    });
+
+    const unsubProducts = db.products.watch((data) => {
+      setProducts(data as (Product & { id: string })[]);
+    });
+
+    const unsubRegions = db.regions.watch((data) => {
+      setRegions(data as (Region & { id: string })[]);
+    });
+
+    const unsubLots = db.lots.watch(
+      (data) => {
+        setLots(data as (ProductLot & { id: string })[]);
+      },
+      orderBy("date", "desc"),
+    );
+
+    return () => {
+      unsubCustomers();
+      unsubProducts();
+      unsubRegions();
+      unsubLots();
+    };
   }, [visible]);
 
   useEffect(() => {
     const init = async () => {
-      if (!visible || regions.length === 0) return;
+      // Wait for both regions and customers to be loaded for a proper edit initializing
+      if (
+        !visible ||
+        regions.length === 0 ||
+        (editLine && customers.length === 0)
+      )
+        return;
 
       if (editLine) {
         if (editLine.region_name) {
-          await fetchDistrictsByRegionName(editLine.region_name);
+          const reg = regions.find(
+            (r) =>
+              r.name.trim().toLowerCase() ===
+              editLine.region_name!.trim().toLowerCase(),
+          );
+          if (reg) {
+            setSelectedRegionId(reg.id!);
+            await fetchDistrictsByRegionName(reg.name);
+          }
         }
+
+        const customer = customers.find(
+          (c: Customer & { id: string }) => c.id === editLine.customer_id,
+        );
+
         setForm({
           lotId: editLine.lotId || "",
           customer_id: editLine.customer_id,
+          customer_phone: customer?.phone || "",
+          customer_name: customer?.name || "",
           region_name: editLine.region_name || "",
           district_name: editLine.district_name || "",
           product_id: editLine.product_id,
@@ -170,17 +219,28 @@ const OrderModal: React.FC<OrderModalProps> = ({
         });
       } else if (initialCustomer) {
         if (initialCustomer.region_name) {
-          await fetchDistrictsByRegionName(initialCustomer.region_name);
+          const reg = regions.find(
+            (r) =>
+              r.name.trim().toLowerCase() ===
+              initialCustomer.region_name.trim().toLowerCase(),
+          );
+          if (reg) {
+            setSelectedRegionId(reg.id!);
+            await fetchDistrictsByRegionName(reg.name);
+          }
         }
         setForm({
           ...emptyForm,
           lotId: lotId || "",
           customer_id: initialCustomer.id || "",
+          customer_phone: initialCustomer.phone || "",
+          customer_name: initialCustomer.name || "",
           region_name: initialCustomer.region_name || "",
           district_name: initialCustomer.district_name || "",
         });
       } else {
         setForm({ ...emptyForm, lotId: lotId || "" });
+        setSelectedRegionId(null);
       }
     };
     init();
@@ -189,43 +249,66 @@ const OrderModal: React.FC<OrderModalProps> = ({
     visible,
     initialCustomer,
     lotId,
-    regions.length,
+    regions,
+    customers,
     fetchDistrictsByRegionName,
   ]);
 
-  const customerOptions = useMemo(
-    () =>
-      customers.map((c) => ({ label: `${c.name} (${c.phone})`, value: c.id! })),
-    [customers],
-  );
   const productOptions = useMemo(
-    () => products.map((p) => ({ label: p.name, value: p.id! })),
+    () => products.map((p: Product) => ({ label: p.name, value: p.id! })),
     [products],
   );
   const regionOptions = useMemo(
-    () => regions.map((r) => ({ label: r.name, value: r.name })),
+    () => regions.map((r: Region) => ({ label: r.name, value: r.id! })),
     [regions],
   );
   const districtOptions = useMemo(
-    () => districts.map((d) => ({ label: d.name, value: d.name })),
+    () => districts.map((d: District) => ({ label: d.name, value: d.name })),
     [districts],
   );
   const lotOptions = useMemo(
-    () => lots.map((o) => ({ label: o.name, value: o.id! })),
+    () => lots.map((o: ProductLot) => ({ label: o.name, value: o.id! })),
     [lots],
   );
 
   const handleSave = async () => {
     const targetLotId = lotId || form.lotId;
-    if (!form.customer_id || !form.product_id || !form.product_count) {
-      Alert.alert("Xato", "Mijoz, mahsulot va miqdor to'ldirilishi shart");
+    if (
+      !form.customer_phone ||
+      !form.customer_name ||
+      !form.product_id ||
+      !form.product_count
+    ) {
+      Alert.alert(
+        "Xato",
+        "Mijoz telefoni, ismi, mahsulot va miqdor to'ldirilishi shart",
+      );
       return;
     }
     setSaving(true);
     try {
+      let finalCustomerId = form.customer_id;
+
+      // If customer doesn't exist, create it
+      if (!finalCustomerId) {
+        const newCustomer: Omit<Customer, "id"> = {
+          name: form.customer_name,
+          phone: form.customer_phone,
+          region_name: form.region_name || "",
+          district_name: form.district_name || "",
+          user_id: auth.currentUser?.uid || "",
+          tag_ids: [],
+          note: "",
+          rates: 0,
+          order_ids: [],
+        };
+        finalCustomerId = await db.customers.create(newCustomer);
+        // Refresh local customers list if needed, or it will be refreshed on next mount
+      }
+
       const orderData: Omit<Order, "id"> = {
         lotId: targetLotId,
-        customer_id: form.customer_id,
+        customer_id: finalCustomerId,
         region_name: form.region_name || "",
         district_name: form.district_name || "",
         product_id: form.product_id,
@@ -268,32 +351,6 @@ const OrderModal: React.FC<OrderModalProps> = ({
     onClose();
   };
 
-  const handleCustomerCreated = async (
-    customerId: string,
-    customerData: Customer,
-  ) => {
-    const newCustomer = { id: customerId, ...customerData };
-    setCustomers((prev) => [...prev, newCustomer]);
-    setForm((f) => ({
-      ...f,
-      customer_id: customerId,
-      region_name: customerData.region_name || f.region_name,
-      district_name: "", // Reset temporarily
-    }));
-
-    if (customerData.region_name) {
-      await fetchDistrictsByRegionName(customerData.region_name);
-      setForm((f) => ({
-        ...f,
-        district_name: customerData.district_name || f.district_name,
-      }));
-    }
-    setAddCustomerModal(false);
-    if (onCustomerAdded) {
-      onCustomerAdded(newCustomer);
-    }
-  };
-
   return (
     <>
       <CustomModal
@@ -323,30 +380,25 @@ const OrderModal: React.FC<OrderModalProps> = ({
             </>
           )}
 
-          {/* ── Mijoz va Viloyat (agar initialCustomer berilmasa ko'rinadi) ── */}
+          {/* ── Mijoz ma'lumotlari ── */}
           {!initialCustomer && (
             <>
-              <Text style={styles.fieldLabel}>Mijoz</Text>
-              <View style={styles.selectRow}>
-                <View style={{ flex: 1 }}>
-                  <Select
-                    data={customerOptions}
-                    placeholder="Mijozni tanlang"
-                    searchPlaceholder="Qidirish..."
-                    search
-                    maxHeight={280}
-                    value={form.customer_id || null}
-                    isInModal={true}
-                    onChange={handleCustomerSelect}
-                  />
-                </View>
-                <Pressable
-                  style={styles.addCustomerBtn}
-                  onPress={() => setAddCustomerModal(true)}
-                >
-                  <MaterialIcons name="person-add" size={20} color="#fff" />
-                </Pressable>
-              </View>
+              <Text style={styles.fieldLabel}>Mijoz Telefon raqami</Text>
+              <PhoneInput
+                name="customer_phone"
+                value={form.customer_phone}
+                onChange={handlePhoneChange}
+              />
+
+              <Text style={styles.fieldLabel}>Mijoz ismi</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Mijoz ismini kiriting"
+                value={form.customer_name}
+                onChangeText={(v: string) =>
+                  setForm((f: typeof emptyForm) => ({ ...f, customer_name: v }))
+                }
+              />
 
               <Text style={styles.fieldLabel}>Viloyat</Text>
               <Select
@@ -355,12 +407,19 @@ const OrderModal: React.FC<OrderModalProps> = ({
                 searchPlaceholder="Qidirish..."
                 search={false}
                 maxHeight={280}
-                value={form.region_name || null}
+                value={selectedRegionId}
                 isInModal={true}
-                onChange={async (v) => {
-                  setForm((f) => ({ ...f, region_name: v, district_name: "" }));
+                onChange={async (v: string) => {
+                  const regName =
+                    regions.find((r) => r.id === v)?.name || v;
+                  setSelectedRegionId(v);
+                  setForm((f: typeof emptyForm) => ({
+                    ...f,
+                    region_name: regName,
+                    district_name: "",
+                  }));
                   // Fetch districts for selected region
-                  await fetchDistrictsByRegionName(v);
+                  await fetchDistrictsByRegionName(regName);
                 }}
               />
 
@@ -373,7 +432,9 @@ const OrderModal: React.FC<OrderModalProps> = ({
                 maxHeight={280}
                 value={form.district_name || null}
                 isInModal={true}
-                onChange={(v) => setForm((f) => ({ ...f, district_name: v }))}
+                onChange={(v: string) =>
+                  setForm((f: typeof emptyForm) => ({ ...f, district_name: v }))
+                }
               />
             </>
           )}
@@ -509,24 +570,7 @@ const OrderModal: React.FC<OrderModalProps> = ({
         </ScrollView>
       </CustomModal>
 
-      {/* Customer Modal inside the Order Modal */}
-      {!initialCustomer && (
-        <CustomModal
-          visible={addCustomerModal}
-          onClose={() => setAddCustomerModal(false)}
-          showBackdrop={false}
-          showHandle={false}
-          sheetStyle={styles.fullSheet}
-          modalTitle="Yangi mijoz qo'shish"
-        >
-          <CustomerForm
-            onSuccess={handleCustomerCreated}
-            onCancel={() => setAddCustomerModal(true)}
-            hideOrders={true}
-            isInModal={true}
-          />
-        </CustomModal>
-      )}
+      {/* Modal removed as we now use inline inputs */}
     </>
   );
 };
@@ -534,15 +578,6 @@ const OrderModal: React.FC<OrderModalProps> = ({
 export default OrderModal;
 
 const styles = StyleSheet.create({
-  selectRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  addCustomerBtn: {
-    backgroundColor: "#6366f1",
-    borderRadius: 10,
-    width: 46,
-    height: 46,
-    justifyContent: "center",
-    alignItems: "center",
-  },
   fieldLabel: {
     fontSize: 12,
     fontWeight: "600",

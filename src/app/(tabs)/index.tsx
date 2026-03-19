@@ -24,6 +24,18 @@ export default function Index() {
             <Text style={styles.cardText}>Mahsulotlar</Text>
           </Pressable>
         </Link>
+        <Link href="/faqt" asChild>
+          <Pressable style={styles.card}>
+            <MaterialIcons name="help-outline" size={32} color="#10b981" />
+            <Text style={styles.cardText}>FAQ</Text>
+          </Pressable>
+        </Link>
+        <Link href="/about-us" asChild>
+          <Pressable style={styles.card}>
+            <MaterialIcons name="info-outline" size={32} color="#3b82f6" />
+            <Text style={styles.cardText}>Biz haqimizda</Text>
+          </Pressable>
+        </Link>
       </View>
     </ScrollView>
   );

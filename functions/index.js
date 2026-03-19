@@ -66,7 +66,9 @@ async function getAddressDetails(lat, lng) {
       address.village ||
       address.suburb ||
       "Noma'lum tuman"
-    ).replace(/ tumani| tuman/gi, "").trim();
+    )
+      .replace(/ tumani| tuman/gi, "")
+      .trim();
 
     // ─── Uzbekistan Region Mapping (Normalize for CRM) ────────────────────────
     const r = region.toLowerCase();
@@ -109,8 +111,90 @@ async function getAddressDetails(lat, lng) {
   }
 }
 
+/**
+ * Telegram callback_query-ga javob berish
+ */
+async function answerCallbackQuery(callbackQueryId, text = "") {
+  try {
+    await axios.post(`${TG_API}/answerCallbackQuery`, {
+      callback_query_id: callbackQueryId,
+      text: text,
+    });
+  } catch (err) {
+    console.error(
+      "AnswerCallbackQuery Error:",
+      err.response?.data || err.message,
+    );
+  }
+}
+
+const MAIN_MENU = {
+  reply_markup: {
+    keyboard: [
+      [{ text: "🛍 Buyurtma qilish" }],
+      [{ text: "❓ Eng ko'p beriladigan savollar" }],
+      [{ text: "ℹ️ Biz haqimizda" }],
+    ],
+    resize_keyboard: true,
+  },
+};
+
+let faqCache = null;
+let lastFaqUpdate = 0;
+const CACHE_TTL = 60 * 60 * 1000; // 1 hour cache
+
+/**
+ * FAQ larni keshdan yoki bazadan olish
+ */
+async function getCachedFaqs() {
+  const now = Date.now();
+  if (faqCache && now - lastFaqUpdate < CACHE_TTL) {
+    return faqCache;
+  }
+
+  try {
+    const snapshots = await db
+      .collection("faqs")
+      .orderBy("createdAt", "desc")
+      .limit(30)
+      .get();
+    faqCache = snapshots.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+    lastFaqUpdate = now;
+    return faqCache;
+  } catch (err) {
+    console.error("GetFaqs Error:", err.message);
+    return faqCache || []; // Xatolik bo'lsa eski keshni yoki bo'sh massiv qaytarish
+  }
+}
+
 exports.telegramWebhook = functions.https.onRequest(async (req, res) => {
   const update = req.body;
+
+  // 1. Callback Query handled (FAQ interaction)
+  if (update && update.callback_query) {
+    const cb = update.callback_query;
+    const chatId = cb.message.chat.id;
+    const data = cb.data; // e.g. "faq_id"
+
+    if (data.startsWith("faq_")) {
+      const faqId = data.replace("faq_", "");
+      const faqs = await getCachedFaqs();
+      const faq = faqs.find((f) => f.id === faqId);
+
+      if (faq) {
+        await sendMessage(chatId, `❓ *${faq.question}*\n\n✅ ${faq.answer}`, {
+          parse_mode: "Markdown",
+        });
+      } else {
+        await sendMessage(chatId, "Kechirasiz, bu savolga javob topilmadi.");
+      }
+    }
+    await answerCallbackQuery(cb.id);
+    return res.status(200).send("ok");
+  }
 
   if (!update || !update.message) {
     return res.status(200).send("ok");
@@ -130,22 +214,104 @@ exports.telegramWebhook = functions.https.onRequest(async (req, res) => {
     ? sessionSnap.data()
     : { step: "start" };
 
-  // ─── START: Salomlashish ──────────────────────────────────────────────────
+  // ─── COMMANDS: /start, /help ───────────────────────────────────────────
   if (text === "/start") {
+    await sessionRef.set({ step: "start" });
+    await sendMessage(
+      chatId,
+      "Assalomu alaykum! Bizning botimizga xush kelibsiz. Iltimos, kerakli bo'limni tanlang:",
+      MAIN_MENU,
+    );
+    return res.status(200).send("ok");
+  }
+
+  if (text === "/help") {
+    await sendMessage(
+      chatId,
+      "Sizga qanday yordam bera olamiz?\n\n- Buyurtma berish uchun '🛍 Buyurtma qilish' tugmasini bosing.\n- Biz haqimizda bilish uchun 'ℹ️ Biz haqimizda' tugmasini bosing.\n- Savollarga javob olish uchun '❓ Eng ko'p beriladigan savollar' tugmasini bosing.",
+      MAIN_MENU,
+    );
+    return res.status(200).send("ok");
+  }
+
+  // ─── MAIN MENU BUTTONS ─────────────────────────────────────────────────
+  if (text === "🛍 Buyurtma qilish") {
     await sessionRef.set({ step: "request_contact" });
     await sendMessage(
       chatId,
-      "Assalomu alaykum! Buyurtma berish uchun telefon raqamingizni yuboring (Pastdagi tugmani bosing):",
+      "Buyurtma berish uchun telefon raqamingizni yuboring (Pastdagi tugmani bosing):",
       {
         reply_markup: {
           keyboard: [
             [{ text: "📞 Telefon raqamni yuborish", request_contact: true }],
+            [{ text: "⬅️ Orqaga" }],
           ],
           resize_keyboard: true,
           one_time_keyboard: true,
         },
       },
     );
+    return res.status(200).send("ok");
+  }
+
+  if (text === "ℹ️ Biz haqimizda") {
+    let info = "";
+    try {
+      const snap = await db.collection("settings").doc("about_us").get();
+      if (snap.exists) {
+        info = snap.data().text;
+      }
+    } catch (e) {
+      console.error("Fetch about_us error:", e);
+    }
+    await sendMessage(chatId, info, MAIN_MENU);
+    return res.status(200).send("ok");
+  }
+
+  if (text === "❓ Eng ko'p beriladigan savollar") {
+    const faqs = await getCachedFaqs();
+    if (faqs.length === 0) {
+      await sendMessage(chatId, "Hozircha savollar yo'q.", MAIN_MENU);
+    } else {
+      let messageText = "❓ *Tez-tez beriladigan savollar*\n\n";
+      const inlineButtons = [];
+      let currentRow = [];
+
+      faqs.forEach((faq, index) => {
+        const num = index + 1;
+        messageText += `*${num}.* ${faq.question}\n\n`;
+
+        currentRow.push({
+          text: num.toString(),
+          callback_data: `faq_${faq.id}`,
+        });
+
+        // Add 5 buttons per row
+        if (currentRow.length === 5) {
+          inlineButtons.push(currentRow);
+          currentRow = [];
+        }
+      });
+
+      if (currentRow.length > 0) {
+        inlineButtons.push(currentRow);
+      }
+
+      messageText += "*Javobni ko'rish uchun tegishli raqamni bosing:*";
+
+      await sendMessage(chatId, messageText, {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: inlineButtons,
+        },
+      });
+    }
+    return res.status(200).send("ok");
+  }
+
+  if (text === "⬅️ Orqaga") {
+    await sessionRef.set({ step: "start" });
+    await sendMessage(chatId, "Asosiy menyuga qaytdingiz:", MAIN_MENU);
     return res.status(200).send("ok");
   }
 
@@ -192,18 +358,12 @@ exports.telegramWebhook = functions.https.onRequest(async (req, res) => {
     }));
 
     if (products.length === 0) {
-      await sessionRef.update({ step: "request_location" });
+      await sessionRef.update({ step: "request_count" });
       await sendMessage(
         chatId,
-        "Rahmat! Endi hozir turgan manzilingizni (lokatsiya) yuboring:",
+        "Rahmat! Nechta kurka jo'jasi (dona) buyurtma qilmoqchisiz? (Faqat raqam yozing):",
         {
-          reply_markup: {
-            keyboard: [
-              [{ text: "📍 Lokatsiyani yuborish", request_location: true }],
-            ],
-            resize_keyboard: true,
-            one_time_keyboard: true,
-          },
+          reply_markup: { remove_keyboard: true },
         },
       );
     } else {
@@ -238,36 +398,14 @@ exports.telegramWebhook = functions.https.onRequest(async (req, res) => {
 
     const productDoc = productsSnap.docs[0];
     await sessionRef.update({
-      step: "request_location",
+      step: "request_count",
       product_id: productDoc.id,
       product_name: productDoc.data().name,
     });
 
-    await sendMessage(chatId, "Ajoyib tanlov! Endi lokatsiyangizni yuboring:", {
-      reply_markup: {
-        keyboard: [
-          [{ text: "📍 Lokatsiyani yuborish", request_location: true }],
-        ],
-        resize_keyboard: true,
-        one_time_keyboard: true,
-      },
-    });
-    return res.status(200).send("ok");
-  }
-
-  // ─── Step 3: Location Qabul qilish ──────────────────────────────────────────
-  if (location && sessionData.step === "request_location") {
-    await sessionRef.update({
-      step: "request_count",
-      location: {
-        lat: location.latitude,
-        lng: location.longitude,
-      },
-    });
-
     await sendMessage(
       chatId,
-      "Manzil qabul qilindi. Nechta kurka jo'jasi (dona) buyurtma qilmoqchisiz? (Faqat raqam yozing):",
+      `Ajoyib tanlov! Nechta ${productDoc.data().name} (dona) buyurtma qilmoqchisiz? (Faqat raqam yozing):`,
       {
         reply_markup: { remove_keyboard: true },
       },
@@ -275,7 +413,7 @@ exports.telegramWebhook = functions.https.onRequest(async (req, res) => {
     return res.status(200).send("ok");
   }
 
-  // ─── Step 4: Product Count Qabul qilish ─────────────────────────────────────
+  // ─── Step 3: Product Count Qabul qilish ─────────────────────────────────────
   if (text && sessionData.step === "request_count") {
     const count = parseInt(text);
     if (isNaN(count)) {
@@ -283,18 +421,39 @@ exports.telegramWebhook = functions.https.onRequest(async (req, res) => {
       return res.status(200).send("ok");
     }
 
+    await sessionRef.update({
+      step: "request_location",
+      product_count: count,
+    });
+
+    await sendMessage(
+      chatId,
+      "Rahmat! Endi hozir turgan manzilingizni (lokatsiya) yuboring (Pastdagi tugmani bosing):",
+      {
+        reply_markup: {
+          keyboard: [
+            [{ text: "📍 Lokatsiyani yuborish", request_location: true }],
+          ],
+          resize_keyboard: true,
+          one_time_keyboard: true,
+        },
+      },
+    );
+    return res.status(200).send("ok");
+  }
+
+  // ─── Step 4: Location Qabul qilish (Oxirgi step) ─────────────────────────────
+  if (location && sessionData.step === "request_location") {
     // Manzil tafsilotlarini aniqlash
     let region = "Noma'lum";
     let district = "Noma'lum";
 
-    if (sessionData.location) {
-      const details = await getAddressDetails(
-        sessionData.location.lat,
-        sessionData.location.lng,
-      );
-      region = details.region;
-      district = details.district;
-    }
+    const details = await getAddressDetails(
+      location.latitude,
+      location.longitude,
+    );
+    region = details.region;
+    district = details.district;
 
     // Yangi Lead (Potentsial mijoz) yaratish
     const newLead = {
@@ -303,10 +462,13 @@ exports.telegramWebhook = functions.https.onRequest(async (req, res) => {
       telegram_id: sessionData.telegram_id,
       product_id: sessionData.product_id || null,
       product_name: sessionData.product_name || "Noma'lum mahsulot",
-      product_count: count,
+      product_count: sessionData.product_count || 0,
       region_name: region,
       district_name: district,
-      location: sessionData.location || null,
+      location: {
+        lat: location.latitude,
+        lng: location.longitude,
+      },
       date: new Date().toISOString(),
       state: "new",
       note: "Bot orqali",
@@ -317,12 +479,13 @@ exports.telegramWebhook = functions.https.onRequest(async (req, res) => {
 
     await sendMessage(
       chatId,
-      `🎉 Rahmat! ${count} dona kurka jojasi uchun buyurtmangiz qabul qilindi. Tez orada operatorlarimiz siz bilan bog'lanishadi.`,
+      `🎉 Rahmat! Buyurtmangiz qabul qilindi. Tez orada operatorlarimiz siz bilan bog'lanishadi.`,
+      MAIN_MENU,
     );
     return res.status(200).send("ok");
   }
 
-  // ─── Chat Muloqoti (Existing Lead) ──────────────────────────────────────────
+  // ─── Chat Muloqoti (Existing Lead or Fallback) ─────────────────────────────
   if (text && (!sessionSnap.exists || sessionData.step === "start")) {
     const leadsSnap = await db
       .collection("leads")
@@ -350,6 +513,10 @@ exports.telegramWebhook = functions.https.onRequest(async (req, res) => {
         sender: "customer",
         timestamp: new Date().toISOString(),
       });
+      return res.status(200).send("ok");
+    } else {
+      // If no session and no lead, maybe show main menu
+      await sendMessage(chatId, "Iltimos, menyudan foydalaning:", MAIN_MENU);
       return res.status(200).send("ok");
     }
   }

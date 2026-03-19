@@ -4,13 +4,12 @@ import Select from "@/components/Select";
 import { auth } from "@/firebase/firebase";
 import db, { database, where } from "@/services/database";
 import { formatPhone } from "@/utils/format";
-import { Customer, District } from "@interfaces/index";
+import { Customer, District, ProductLot, Region } from "@interfaces/index";
 import { useRouter } from "expo-router";
 import { collection, query } from "firebase/firestore";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   useCollectionData,
-  useCollectionOnce,
 } from "react-firebase-hooks/firestore";
 import { Controller, useForm } from "react-hook-form";
 import { Rating } from "react-native-ratings";
@@ -44,32 +43,32 @@ const CustomerForm = ({
   const router = useRouter();
   const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
   // ─── Regions ──────────────────────────────────────────────────────────────
-  const [regionsSnap] = useCollectionOnce(
+  // ─── Regions ──────────────────────────────────────────────────────────────
+  const [regionsData] = useCollectionData<Region & { id: string }>(
     collection(database, "regions") as any,
   );
   // Viloyatlar yuklanganda yoki initialData o'zgarganda ID ni aniqlash
   useEffect(() => {
-    if (regionsSnap && initialData?.region_name) {
+    if (regionsData && initialData?.region_name) {
       const val = initialData.region_name.trim();
       const normalize = (s: string) => s.toLowerCase().replace(/['` ]/g, "");
       const normalizedValue = normalize(val);
-      
-      let found = regionsSnap.docs.find(
+
+      let found = regionsData.find(
         (d) =>
-          d.id === val ||
-          normalize(d.data()?.name || "") === normalizedValue
+          d.id === val || normalize(d.name || "") === normalizedValue,
       );
 
       // Qo'shimcha fuzzy matching (ayniqsa Toshkent uchun)
       if (!found && normalizedValue === "toshkent") {
-        found = regionsSnap.docs.find((d) => d.id === "toshkent_sh");
+        found = regionsData.find((d) => d.id === "toshkent_sh");
       }
 
       if (found) {
-        setSelectedRegionId(found.id);
+        setSelectedRegionId(found.id!);
       }
     }
-  }, [regionsSnap, initialData?.region_name]);
+  }, [regionsData, initialData?.region_name]);
 
   // ─── Districts (Flat collection query) ────────────────────────────────────
   const districtsQuery = useMemo(
@@ -87,19 +86,23 @@ const CustomerForm = ({
   });
 
   // ─── Lots (Partiyalar) ────────────────────────────────────────────────────
-  const [lotsSnap] = useCollectionOnce(collection(database, "lots") as any);
+  const [lotsData] = useCollectionData<ProductLot & { id: string }>(
+    collection(database, "lots") as any,
+  );
 
   // ─── Tags ─────────────────────────────────────────────────────────────────
-  const [tagsSnap] = useCollectionOnce(collection(database, "tags") as any);
+  const [tagsData] = useCollectionData<{ name: string; id: string }>(
+    collection(database, "tags") as any,
+  );
 
   // ─── Select options ───────────────────────────────────────────────────────
   const regions = useMemo(
     () =>
-      (regionsSnap?.docs ?? []).map((d) => ({
-        label: d.data().name as string,
+      (regionsData ?? []).map((d) => ({
+        label: d.name,
         value: d.id,
       })),
-    [regionsSnap],
+    [regionsData],
   );
 
   const districts = useMemo(
@@ -109,20 +112,20 @@ const CustomerForm = ({
 
   const lots = useMemo(
     () =>
-      (lotsSnap?.docs ?? []).map((d) => ({
-        label: d.data().name as string,
+      (lotsData ?? []).map((d) => ({
+        label: d.name,
         value: d.id,
       })),
-    [lotsSnap],
+    [lotsData],
   );
 
   const tags = useMemo(
     () =>
-      (tagsSnap?.docs ?? []).map((d) => ({
-        label: d.data().name as string,
+      (tagsData ?? []).map((d) => ({
+        label: d.name,
         value: d.id,
       })),
-    [tagsSnap],
+    [tagsData],
   );
 
   const {
@@ -276,17 +279,20 @@ const CustomerForm = ({
             rules={{ required: "Viloyat kiritilishi shart" }}
             render={({ field: { onChange, value } }) => {
               // Formadagi nomga qarab Select uchun ID ni aniqlaymiz
-              const normalize = (s: string) => s.toLowerCase().replace(/['` ]/g, "");
+              const normalize = (s: string) =>
+                s.toLowerCase().replace(/['` ]/g, "");
               const normalizedValue = normalize(value || "");
-              let foundDoc = (regionsSnap?.docs ?? []).find(
-                (d) => 
-                  d.id === value || 
-                  normalize(d.data()?.name || "") === normalizedValue
+              let foundDoc = (regionsData ?? []).find(
+                (d) =>
+                  d.id === value ||
+                  normalize(d.name || "") === normalizedValue,
               );
 
               // Toshkent uchun fuzzy match
               if (!foundDoc && normalizedValue === "toshkent") {
-                foundDoc = (regionsSnap?.docs ?? []).find((d) => d.id === "toshkent_sh");
+                foundDoc = (regionsData ?? []).find(
+                  (d) => d.id === "toshkent_sh",
+                );
               }
 
               const currentId = foundDoc?.id || "";
@@ -406,24 +412,6 @@ const CustomerForm = ({
                 startingValue={value || 0}
                 style={{ marginRight: "auto" }}
                 onFinishRating={onChange}
-              />
-            )}
-          />
-        </View>
-
-        {/* Telegram ID */}
-        <View style={styles.fieldGroup}>
-          <Text style={styles.label}>Telegram ID</Text>
-          <Controller
-            control={control}
-            name="telegram_id"
-            render={({ field: { onChange, value } }) => (
-              <Input
-                name="telegram_id"
-                value={value ?? ""}
-                errors={errors}
-                onChange={onChange}
-                placeholder="Telegram ID yoki username..."
               />
             )}
           />

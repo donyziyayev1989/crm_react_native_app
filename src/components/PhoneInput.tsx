@@ -1,10 +1,10 @@
+import CustomModal from "@/components/CustomModal";
 import { InputProps } from "@/interfaces/index";
 import { MaterialIcons } from "@expo/vector-icons";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
-  Modal,
   PermissionsAndroid,
   Platform,
   Pressable,
@@ -25,12 +25,7 @@ try {
   CallLogs = null;
 }
 
-const phoneMask = [
-  "+",
-  "9",
-  "9",
-  "8",
-  " ",
+const localPhoneMask = [
   /\d/,
   /\d/,
   " ",
@@ -57,25 +52,26 @@ const PhoneInput = ({
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const formatPhoneNumberForInput = (phone: string) => {
-    // Basic extraction of digits handling +998 cases
+  const formatPhoneNumberForInput = React.useCallback((phone: string) => {
+    // Extract digits and remove leading 998 if present to normalize
     let digits = phone.replace(/\D/g, "");
     if (digits.startsWith("998")) {
       digits = digits.slice(3);
     }
-    // format to +998 XX XXX-XX-XX
-    if (digits.length <= 9) {
-      let formatted = "+998 ";
-      if (digits.length > 0) formatted += digits.substring(0, 2);
-      if (digits.length > 2) formatted += " " + digits.substring(2, 5);
-      if (digits.length > 5) formatted += "-" + digits.substring(5, 7);
-      if (digits.length > 7) formatted += "-" + digits.substring(7, 9);
-      return formatted;
-    }
-    return phone;
-  };
 
-  const openCallLogs = async () => {
+    // Standard Uzbekistan format: +998 (2 digits) (3 digits)-(2 digits)-(2 digits)
+    // We only format if it looks like a 9-digit local number
+    if (digits.length === 9) {
+      return `+998 ${digits.slice(0, 2)} ${digits.slice(2, 5)} ${digits.slice(
+        5,
+        7,
+      )} ${digits.slice(7, 9)}`;
+    }
+    // Fallback: just return the normalized version with prefix if it's not empty
+    return digits ? `+998${digits}` : "";
+  }, []);
+
+  const openCallLogs = React.useCallback(async () => {
     if (!CallLogs) {
       alert(
         "Qo'ng'iroqlar tarixini ko'rish uchun ilovani 'prebuild' qilib Native rejimda ishga tushirishingiz kerak (bu xususiyat Expo Go'da ishlamaydi).",
@@ -97,8 +93,8 @@ const PhoneInput = ({
       if (granted === PermissionsAndroid.RESULTS.GRANTED) {
         setModalVisible(true);
         setLoading(true);
-        const callLogs = await CallLogs.load(30);
-        setLogs(callLogs);
+        const callLogs = await CallLogs.load(100);
+        setLogs(callLogs || []);
         setLoading(false);
       } else {
         alert("Ruxsat berilmadi");
@@ -106,120 +102,112 @@ const PhoneInput = ({
     } catch (e) {
       console.error(e);
       alert("Xato yuz berdi");
+      setLoading(false);
     }
-  };
+  }, []);
 
-  const handleSelectLog = (phoneNumber: string) => {
-    const formatted = formatPhoneNumberForInput(phoneNumber);
-    onChange(formatted);
-    setModalVisible(false);
-  };
+  const handleSelectLog = React.useCallback(
+    (phoneNumber: string) => {
+      // Normalize to 9-digit local part
+      let digits = phoneNumber.replace(/\D/g, "");
+      if (digits.startsWith("998") && digits.length > 9) {
+        digits = digits.slice(3);
+      }
+      if (digits.length > 9) digits = digits.slice(-9);
+
+      onChange("+998 " + digits);
+      setModalVisible(false);
+    },
+    [onChange],
+  );
+
+  // Derive the local part for the MaskInput (everything after +998 )
+  const localValue = React.useMemo(() => {
+    if (!value) return "";
+    let clean = value.replace(/\D/g, "");
+    if (clean.startsWith("998") && clean.length > 3) {
+      return clean.slice(3);
+    }
+    return clean.length > 9 ? clean.slice(-9) : clean;
+  }, [value]);
 
   return (
     <View style={styles.container}>
-      <MaskInput
-        {...(props as any)}
-        value={value}
-        onChangeText={(masked, unmasked) => {
-          if (
-            masked === "+" ||
-            masked === "+9" ||
-            masked === "+99" ||
-            masked === "+998" ||
-            masked === "+998 "
-          ) {
-            onChange("");
-          } else {
-            onChange(masked);
-          }
-        }}
-        onFocus={(e) => {
-          if (!value) {
-            onChange("+998 ");
-          }
-          if (props.onFocus) props.onFocus(e);
-        }}
-        onBlur={(e) => {
-          if (value === "+998 " || value === "+998") {
-            onChange("");
-          }
-          if (props.onBlur) props.onBlur(e);
-        }}
-        mask={phoneMask}
-        style={[styles.input, errors?.[name] && styles.inputError]}
-        placeholder={placeholder || "+998 __ ___-__-__"}
-        placeholderTextColor="#9ca3af"
-        keyboardType="phone-pad"
-      />
-      {Platform.OS === "android" && (
-        <Pressable onPress={openCallLogs} style={styles.iconButton}>
-          <MaterialIcons name="history" size={24} color="#6b7280" />
-        </Pressable>
-      )}
+      <View style={[styles.inputWrapper, errors?.[name] && styles.inputError]}>
+        <Text style={styles.prefix}>+998 </Text>
+        <MaskInput
+          {...(props as any)}
+          value={localValue}
+          onChangeText={(masked, unmasked) => {
+            // Always store as +998 + digits in the parent state
+            onChange(unmasked ? "+998 " + unmasked : "");
+          }}
+          mask={localPhoneMask}
+          style={styles.maskInput}
+          placeholder={placeholder || "__ ___-__-__"}
+          placeholderTextColor="#9ca3af"
+          keyboardType="phone-pad"
+        />
+        {Platform.OS === "android" && (
+          <Pressable onPress={openCallLogs} style={styles.iconButton}>
+            <MaterialIcons name="history" size={24} color="#6b7280" />
+          </Pressable>
+        )}
+      </View>
 
-      <Modal
+      <CustomModal
         visible={modalVisible}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setModalVisible(false)}
+        onClose={() => setModalVisible(false)}
+        modalTitle={"Qo'ng'iroqlar tarixi"}
+        contentContainerStyle={{ justifyContent: "flex-end" }}
+        sheetStyle={{ zIndex: 1000 }}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Qo'ng'iroqlar tarixi</Text>
-              <Pressable onPress={() => setModalVisible(false)}>
-                <MaterialIcons name="close" size={24} color="#111827" />
-              </Pressable>
+        <View style={styles.modalContent}>
+          {loading ? (
+            <View style={styles.center}>
+              <ActivityIndicator size="large" color="#007AFF" />
             </View>
-
-            {loading ? (
-              <View style={styles.center}>
-                <ActivityIndicator size="large" color="#007AFF" />
-              </View>
-            ) : (
-              <FlatList
-                data={logs}
-                keyExtractor={(item, index) =>
-                  item.timestamp?.toString() || index.toString()
-                }
-                renderItem={({ item }) => (
-                  <Pressable
-                    style={styles.logItem}
-                    onPress={() => handleSelectLog(item.phoneNumber)}
-                  >
-                    <View style={styles.logIcon}>
-                      <MaterialIcons
-                        name={
-                          item.type === "INCOMING"
-                            ? "call-received"
-                            : item.type === "OUTGOING"
-                              ? "call-made"
-                              : "call-missed"
-                        }
-                        size={20}
-                        color={item.type === "MISSED" ? "#ef4444" : "#6b7280"}
-                      />
-                    </View>
-                    <View style={styles.logDetails}>
-                      <Text style={styles.logName}>
-                        {item.name || "Noma'lum"}
-                      </Text>
-                      <Text style={styles.logPhone}>{item.phoneNumber}</Text>
-                    </View>
-                    <Text style={styles.logDate}>
-                      {item.timestamp
-                        ? new Date(
-                            parseInt(item.timestamp),
-                          ).toLocaleDateString()
-                        : ""}
+          ) : (
+            <FlatList
+              data={logs}
+              keyExtractor={(item, index) =>
+                item.timestamp?.toString() || index.toString()
+              }
+              renderItem={({ item }) => (
+                <Pressable
+                  style={styles.logItem}
+                  onPress={() => handleSelectLog(item.phoneNumber)}
+                >
+                  <View style={styles.logIcon}>
+                    <MaterialIcons
+                      name={
+                        item.type === "INCOMING"
+                          ? "call-received"
+                          : item.type === "OUTGOING"
+                            ? "call-made"
+                            : "call-missed"
+                      }
+                      size={20}
+                      color={item.type === "MISSED" ? "#ef4444" : "#6b7280"}
+                    />
+                  </View>
+                  <View style={styles.logDetails}>
+                    <Text style={styles.logName}>
+                      {item.name || "Noma'lum"}
                     </Text>
-                  </Pressable>
-                )}
-              />
-            )}
-          </View>
+                    <Text style={styles.logPhone}>{item.phoneNumber}</Text>
+                  </View>
+                  <Text style={styles.logDate}>
+                    {item.timestamp
+                      ? new Date(parseInt(item.timestamp)).toLocaleDateString()
+                      : ""}
+                  </Text>
+                </Pressable>
+              )}
+            />
+          )}
         </View>
-      </Modal>
+      </CustomModal>
     </View>
   );
 };
@@ -229,52 +217,38 @@ const styles = StyleSheet.create({
     position: "relative",
     justifyContent: "center",
   },
-  input: {
+  inputWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
     borderWidth: 1,
     borderColor: "#e5e7eb",
     borderRadius: 10,
     paddingHorizontal: 14,
-    paddingRight: 45, // Add padding for the icon
-    paddingVertical: 12,
+    backgroundColor: "#fff",
+    elevation: 2,
+    height: 48,
+  },
+  prefix: {
     fontSize: 15,
     color: "#111827",
-    backgroundColor: "#fff",
-    boxShadow: "0px 1px 1.41px rgba(85, 85, 85, 0.1)",
-    elevation: 2,
+    fontWeight: "500",
+  },
+  maskInput: {
+    flex: 1,
+    fontSize: 15,
+    color: "#111827",
+    height: "100%",
   },
   inputError: {
     borderColor: "#ef4444",
   },
   iconButton: {
-    position: "absolute",
-    right: 12,
     padding: 4,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "flex-end",
   },
   modalContent: {
     backgroundColor: "#fff",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    height: "70%",
-    padding: 16,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f3f4f6",
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#111827",
   },
   center: {
     flex: 1,

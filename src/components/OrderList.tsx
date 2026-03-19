@@ -6,6 +6,7 @@ import React, { useMemo, useState } from "react";
 import { Pressable, SectionList, StyleSheet, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
+import Select from "./Select";
 
 type GroupBy = "none" | "region" | "product" | "lot";
 
@@ -149,33 +150,27 @@ const OrderList: React.FC<OrderListProps> = ({
     );
   };
 
+  const groupByOptions = useMemo(
+    () => [
+      { label: "Yo'q", value: "none" },
+      { label: "Viloyat", value: "region" },
+      { label: "Mahsulot", value: "product" },
+      { label: "Partiya", value: "lot" },
+    ],
+    [],
+  );
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={styles.groupPicker}>
-        <Text style={styles.groupLabel}>Guruhlash:</Text>
-        <View style={styles.chipRow}>
-          {(["none", "region", "product", "lot"] as const).map((g) => (
-            <Pressable
-              key={g}
-              onPress={() => setGroupBy(g)}
-              style={[styles.chip, groupBy === g && styles.chipActive]}
-            >
-              <Text
-                style={[
-                  styles.chipText,
-                  groupBy === g && styles.chipTextActive,
-                ]}
-              >
-                {g === "none"
-                  ? "Yo'q"
-                  : g === "region"
-                    ? "Viloyat"
-                    : g === "product"
-                      ? "Mahsulot"
-                      : "Partiya"}
-              </Text>
-            </Pressable>
-          ))}
+        <View style={{ flex: 1 }}>
+          <Select
+            data={groupByOptions}
+            placeholder="Tanlang..."
+            searchPlaceholder="Qidirish..."
+            value={groupBy}
+            onChange={(v) => setGroupBy(v as GroupBy)}
+          />
         </View>
       </View>
 
@@ -283,32 +278,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     color: "#6b7280",
-    marginRight: 10,
-  },
-  chipRow: {
-    flexDirection: "row",
-    gap: 8,
-  },
-  chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: "#f3f4f6",
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-  },
-  chipActive: {
-    backgroundColor: "#6366f1",
-    borderColor: "#6366f1",
-  },
-  chipText: {
-    fontSize: 12,
-    color: "#374151",
-    fontWeight: "500",
-  },
-  chipTextActive: {
-    color: "#fff",
-    fontWeight: "700",
+    marginRight: 15,
   },
   listContent: {
     padding: 16,

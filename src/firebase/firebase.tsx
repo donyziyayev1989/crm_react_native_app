@@ -5,7 +5,11 @@ import {
   // @ts-ignore
   getReactNativePersistence
 } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { 
+  initializeFirestore, 
+  persistentLocalCache, 
+  persistentMultipleTabManager 
+} from "firebase/firestore";
 import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from "react-native";
 
@@ -29,4 +33,9 @@ export const auth = Platform.OS === 'web'
       persistence: getReactNativePersistence(ReactNativeAsyncStorage)
     });
 
-export const database = getFirestore(app);
+// Firestore uchun persistence (offline CRUD funksionali)
+export const database = initializeFirestore(app, {
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager(),
+  }),
+});

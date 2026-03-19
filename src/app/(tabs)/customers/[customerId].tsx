@@ -30,47 +30,43 @@ const CustomerDetail = () => {
 
   useEffect(() => {
     if (!customerId) return;
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        const [customerData, productsData, usersData, ordersData] =
-          await Promise.all([
-            db.customers.get(customerId),
-            db.products.list(),
-            db.users.list(),
-            db.orders.list(where("customer_id", "==", customerId)),
-          ]);
 
-        if (!customerData) {
-          setCustomer(null);
-          return;
-        }
-        setCustomer(customerData);
+    setLoading(true);
 
-        // Sanasi bo'yicha kamayish tartibida saralash
-        const sortedOrders = ordersData as (Order & { id: string })[];
+    const unsubCustomer = db.customers.watch((data) => {
+      const found = data.find((c) => c.id === customerId);
+      if (found) {
+        setCustomer(found);
+      } else {
+        setCustomer(null);
+      }
+    }, where("__name__", "==", customerId));
+
+    const unsubProducts = db.products.watch((data) => {
+      const pMap: Record<string, { name: string; price: number }> = {};
+      data.forEach((p) => {
+        if (p.id) pMap[p.id] = { name: p.name, price: p.price };
+      });
+      setProductsMap(pMap);
+    });
+
+    const unsubUsers = db.users.watch((data) => {
+      const uMap: Record<string, string> = {};
+      data.forEach((u) => {
+        if (u.id) uMap[u.id] = u.name;
+      });
+      setUsersMap(uMap);
+    });
+
+    const unsubOrders = db.orders.watch(
+      async (data) => {
+        const sortedOrders = data as (Order & { id: string })[];
         sortedOrders.sort(
           (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
         );
         setOrders(sortedOrders);
 
-        // Mahsulotlar map
-        const pMap: Record<string, { name: string; price: number }> = {};
-        productsData.forEach((p) => {
-          if (p.id) {
-            pMap[p.id] = { name: p.name, price: p.price };
-          }
-        });
-        setProductsMap(pMap);
-
-        // Users map
-        const uMap: Record<string, string> = {};
-        usersData.forEach((u) => {
-          if (u.id) uMap[u.id] = u.name;
-        });
-        setUsersMap(uMap);
-
-        // Partiyalar (Lots) nomlarini olamiz
+        // Partiyalarni (Lots) nomlarini olamiz
         const uniqueLotIds = [
           ...new Set(sortedOrders.map((o) => o.lotId).filter(Boolean)),
         ] as string[];
@@ -82,15 +78,19 @@ const CustomerDetail = () => {
           if (l?.id) lMap[l.id] = l.name;
         });
         setLotsMap(lMap);
-      } catch (error) {
-        console.error("Error fetching customer detail data:", error);
-      } finally {
         setLoading(false);
-      }
-    };
+      },
+      where("customer_id", "==", customerId),
+    );
 
-    fetchData();
+    return () => {
+      unsubCustomer();
+      unsubProducts();
+      unsubUsers();
+      unsubOrders();
+    };
   }, [customerId]);
+
   console.log(customer);
   if (loading) {
     return (

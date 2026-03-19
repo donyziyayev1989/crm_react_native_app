@@ -214,23 +214,37 @@ const Select = ({
         isInModal && { marginTop: -(StatusBar.currentHeight || 0) },
       ]}
       flatListProps={flatListProps}
-      renderRightIcon={() =>
-        isFocus ? (
-          <MaterialIcons
-            name="keyboard-arrow-up"
-            style={styles.icon}
-            size={16}
-            color="blue"
-          />
-        ) : (
-          <MaterialIcons
-            name="keyboard-arrow-down"
-            style={styles.icon}
-            size={16}
-            color="black"
-          />
-        )
-      }
+      renderRightIcon={() => (
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          {(propValue !== undefined ? propValue : value) && !disable && (
+            <Pressable
+              onPress={(e) => {
+                // Prevent dropdown from opening
+                setValue(null);
+                if (onChange) onChange(null);
+              }}
+              style={{ marginRight: 5 }}
+            >
+              <MaterialIcons name="close" size={18} color="#9ca3af" />
+            </Pressable>
+          )}
+          {isFocus && propValue !== undefined ? (
+            <MaterialIcons
+              name="keyboard-arrow-up"
+              style={styles.icon}
+              size={16}
+              color="blue"
+            />
+          ) : (
+            <MaterialIcons
+              name="keyboard-arrow-down"
+              style={styles.icon}
+              size={16}
+              color="black"
+            />
+          )}
+        </View>
+      )}
     />
   );
 };

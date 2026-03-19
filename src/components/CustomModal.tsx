@@ -12,6 +12,9 @@ import {
   ViewStyle,
 } from "react-native";
 
+// Global stack to track open modals and ensure priority
+let openedModals: string[] = [];
+
 interface CustomModalProps {
   visible: boolean;
   onClose: () => void;
@@ -33,8 +36,8 @@ const CustomModal: React.FC<CustomModalProps> = ({
   modalTitle = "",
   sheetStyle,
 }) => {
+  const modalId = useRef(Math.random().toString(36).substring(7)).current;
   const panY = useRef(new Animated.Value(1000)).current;
-
   const opacityAnim = useRef(new Animated.Value(0)).current;
 
   const resetPositionAnim = Animated.timing(panY, {
@@ -65,7 +68,9 @@ const CustomModal: React.FC<CustomModalProps> = ({
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, gs) => {
-        return gs.dy > 10 && Math.abs(gs.dy) > Math.abs(gs.dx);
+        // Only trigger if this is the top-most modal in the stack
+        const isTop = openedModals[openedModals.length - 1] === modalId;
+        return isTop && gs.dy > 10 && Math.abs(gs.dy) > Math.abs(gs.dx);
       },
       onPanResponderMove: (_, gs) => {
         if (gs.dy > 0) {
@@ -79,11 +84,16 @@ const CustomModal: React.FC<CustomModalProps> = ({
           resetPositionAnim.start();
         }
       },
+      onPanResponderTerminationRequest: () => true,
+      onShouldBlockNativeResponder: () => true,
     }),
   ).current;
 
   useEffect(() => {
     if (visible) {
+      if (!openedModals.includes(modalId)) {
+        openedModals.push(modalId);
+      }
       panY.setValue(1000);
       opacityAnim.setValue(0);
       Animated.parallel([
@@ -98,8 +108,14 @@ const CustomModal: React.FC<CustomModalProps> = ({
           useNativeDriver: true,
         }),
       ]).start();
+    } else {
+      openedModals = openedModals.filter((id) => id !== modalId);
     }
-  }, [visible, panY, opacityAnim]);
+
+    return () => {
+      openedModals = openedModals.filter((id) => id !== modalId);
+    };
+  }, [visible, panY, opacityAnim, modalId]);
 
   return (
     <Modal
