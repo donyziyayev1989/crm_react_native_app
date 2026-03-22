@@ -144,29 +144,43 @@ const Leads = () => {
         )}
         renderItem={({ item }) => (
           <Card className="mb-3 shadow-sm shadow-slate-400/30">
-            <View className="flex-row justify-between items-start">
-              <View>
-                <Text className="text-lg font-bold text-gray-800">
-                  {item.name}
-                </Text>
+            <View className="flex-col justify-between items-start">
+              <View className="flex-row items-center gap-2 justify-between w-full">
+                <View className="flex-row items-center gap-2">
+                  <MaterialIcons name="person" size={24} color="#777" />
+                  <Text className="text-lg font-bold text-gray-800">
+                    {item.name}
+                  </Text>
+                </View>
                 <Text className="text-gray-500">{formatPhone(item.phone)}</Text>
-                <View className="bg-indigo-50 px-2 py-1 rounded-md self-start mt-1">
+              </View>
+              <View className="flex-row items-center gap-2 justify-between w-full">
+                <View className="flex-row items-center gap-2">
+                  <MaterialIcons
+                    name="check-circle-outline"
+                    size={20}
+                    color="#6366f1"
+                  />
                   <Text className="text-indigo-600 font-bold">
                     {item.product_name || "Noma'lum mahsulot"}
                   </Text>
                 </View>
-                <Text className="text-blue-500 font-semibold mt-1">
-                  {item.product_count} dona buyurtma
-                </Text>
+                <View className="flex-row items-center gap-2">
+                  <Text className="text-blue-500 font-semibold mt-1">
+                    {item.product_count} dona
+                  </Text>
+                </View>
+              </View>
+              <View className="flex-row items-center gap-2 justify-between w-full mt-1">
                 {item.region_name && (
-                  <Text className="text-xs text-gray-400 mt-1">
+                  <Text className="text-sm text-gray-400">
                     📍 {item.region_name}, {item.district_name}
                   </Text>
                 )}
+                <Text className="text-sm text-muted">
+                  {formatDate(item.date)}
+                </Text>
               </View>
-              <Text className="text-[10px] text-gray-400">
-                {formatDate(item.date)}
-              </Text>
             </View>
 
             <View className="flex-row gap-2 mt-4">

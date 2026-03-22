@@ -166,7 +166,7 @@ const OrderList: React.FC<OrderListProps> = ({
         <View style={{ flex: 1 }}>
           <Select
             data={groupByOptions}
-            placeholder="Tanlang..."
+            placeholder="Guruhlash..."
             searchPlaceholder="Qidirish..."
             value={groupBy}
             onChange={(v) => setGroupBy(v as GroupBy)}
@@ -183,13 +183,21 @@ const OrderList: React.FC<OrderListProps> = ({
         ListFooterComponent={ListFooterComponent}
         stickySectionHeadersEnabled={true}
         style={{ backgroundColor: "#F2F2F2" }}
-        renderSectionHeader={({ section: { title } }) =>
-          title ? (
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>{title}</Text>
-              <View style={styles.sectionBadge}>
+        renderSectionHeader={({ section }) =>
+          section.title ? (
+            <View style={styles.sectionHeader} className="bg-indigo-200">
+              <Text style={styles.sectionTitle}>{section.title}</Text>
+              <Text className="ml-2 font-bold">({section.data.length} ta)</Text>
+
+              <View
+                style={styles.sectionBadge}
+                className="bg-indigo-500 ml-auto"
+              >
                 <Text style={styles.sectionBadgeText}>
-                  {sections.find((s) => s.title === title)?.data.length}
+                  {section.data.reduce(
+                    (acc, item) => acc + (Number(item.product_count) || 0),
+                    0,
+                  )}
                 </Text>
               </View>
             </View>
@@ -208,9 +216,7 @@ const OrderList: React.FC<OrderListProps> = ({
           };
 
           return (
-            <View
-              className={`mb-3 shadow-sm shadow-slate-400/30 ${isSelected ? "border-1 border-indigo-500" : ""}`}
-            >
+            <View className="mb-3">
               <View style={styles.itemRow}>
                 {selectable && (
                   <Pressable
@@ -285,15 +291,12 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
   },
   sectionHeader: {
-    backgroundColor: "#f9fafb",
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 8,
     marginBottom: 8,
-    marginTop: 16,
     borderLeftWidth: 4,
     borderLeftColor: "#6366f1",
   },
@@ -304,7 +307,6 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   sectionBadge: {
-    backgroundColor: "#e0e7ff",
     borderRadius: 12,
     paddingHorizontal: 8,
     paddingVertical: 2,
@@ -312,7 +314,7 @@ const styles = StyleSheet.create({
   sectionBadgeText: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#4338ca",
+    color: "#fff",
   },
   itemWrapper: {
     marginBottom: 10,

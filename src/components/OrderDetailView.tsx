@@ -74,7 +74,7 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({
         <Text style={styles.label}>Jami:</Text>
         <Text style={[styles.value, { fontWeight: "bold" }]}>
           {formatMoney(
-            order.product_count * order.product_price + order.delivery_price,
+            order.product_count * (order.product_price + order.delivery_price),
           )}{" "}
           so'm
         </Text>
