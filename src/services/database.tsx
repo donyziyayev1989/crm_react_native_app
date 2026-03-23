@@ -12,6 +12,7 @@ import {
   Lead,
   LeadChat,
   LeadMessage,
+  FAQ,  
   User 
 } from "@interfaces/index";
 import * as jsFirestore from "firebase/firestore";
@@ -76,6 +77,11 @@ function createCollection<T>(
       await f.deleteDoc(ref);
     },
 
+    set: async (id: string, data: Partial<T>): Promise<void> => {
+      const ref = f.doc(database as any, collectionName, id);
+      await f.setDoc(ref, data, { merge: true });
+    },
+
     watch: (callback: (data: T[]) => void, ...constraints: any[]) => {
       const colRef = getColRef();
       const q = constraints.length > 0 ? f.query(colRef, ...constraints) : colRef;
@@ -127,6 +133,10 @@ function createSubCollection<T>(
         const ref = f.doc(database as any, path, id);
         await f.deleteDoc(ref);
       },
+      set: async (id: string, data: Partial<T>): Promise<void> => {
+        const ref = f.doc(database as any, path, id);
+        await f.setDoc(ref, data, { merge: true });
+      },
       watch: (callback, ...constraints) => {
         const colRef = getSubColRef();
         const q = constraints.length > 0 ? f.query(colRef, ...constraints) : colRef;
@@ -157,6 +167,8 @@ const db = {
   lead_chats: createCollection<LeadChat>("lead_chats"),
   // Sub-collections
   lead_messages: createSubCollection<LeadMessage>("lead_chats", "messages"),
+  faqs: createCollection<FAQ>("faqs"),
+  settings: createCollection<any>("settings"),
 };
 
 export default db;
@@ -169,5 +181,6 @@ export interface CollectionMethods<T> {
   create: (data: Omit<T, "id">) => Promise<string>;
   update: (id: string, data: Partial<Omit<T, "id">>) => Promise<void>;
   delete: (id: string) => Promise<void>;
+  set: (id: string, data: Partial<T>) => Promise<void>;
   watch: (callback: (data: T[]) => void, ...constraints: any[]) => () => void;
 }

@@ -4,7 +4,7 @@ import db, { orderBy } from "@/services/database";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { callPhone } from "@utils/actions";
 import { formatDate, formatPhone } from "@utils/format";
-import { Stack, useRouter } from "expo-router";
+import { Link, Stack, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -128,7 +128,16 @@ const Leads = () => {
   return (
     <View style={styles.container}>
       <Stack.Screen
-        options={{ title: "Yangi murojaatlar", headerShown: true }}
+        options={{
+          title: "Yangi murojaatlar",
+          headerLeft: () => (
+            <Link href="/" asChild>
+              <Pressable className="p-3">
+                <MaterialIcons name="arrow-back" size={24} color="#6b7280" />
+              </Pressable>
+            </Link>
+          ),
+        }}
       />
       <FlatList
         data={leads}

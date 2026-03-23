@@ -1,14 +1,11 @@
 import Card from "@/components/Card";
-import { database } from "@/firebase/firebase";
+import db from "@/services/database";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { Stack } from "expo-router";
-import { doc, onSnapshot, setDoc } from "firebase/firestore";
+import { Link, Stack } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -23,10 +20,10 @@ export default function AboutUsScreen() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    const docRef = doc(database, "settings", "about_us");
-    const unsubscribe = onSnapshot(docRef, (docSnap) => {
-      if (docSnap.exists()) {
-        setText(docSnap.data().text || "");
+    const unsubscribe = db.settings.watch((data) => {
+      const aboutUs = data.find((d) => d.id === "about_us");
+      if (aboutUs) {
+        setText(aboutUs.text || "");
       }
       setLoading(false);
     });
@@ -41,7 +38,7 @@ export default function AboutUsScreen() {
 
     setSaving(true);
     try {
-      await setDoc(doc(database, "settings", "about_us"), {
+      await db.settings.set("about_us", {
         text: text.trim(),
         updatedAt: new Date().toISOString(),
       });
@@ -62,11 +59,19 @@ export default function AboutUsScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      style={styles.container}
-    >
-      <Stack.Screen options={{ title: "Biz haqimizda" }} />
+    <>
+      <Stack.Screen
+        options={{
+          title: "Biz haqimizda",
+          headerLeft: () => (
+            <Link href="/" asChild>
+              <Pressable className="p-3">
+                <MaterialIcons name="arrow-back" size={24} color="#6b7280" />
+              </Pressable>
+            </Link>
+          ),
+        }}
+      />
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <Card className="p-4" style={styles.boxShadow}>
           <View style={styles.header}>
@@ -97,7 +102,7 @@ export default function AboutUsScreen() {
           </Pressable>
         </Card>
       </ScrollView>
-    </KeyboardAvoidingView>
+    </>
   );
 }
 

@@ -2,6 +2,7 @@ import Card from "@/components/Card";
 import OrderCard from "@/components/OrderCard";
 import OrderModal from "@/components/OrderModal";
 import db, { where } from "@/services/database";
+import { formatPhone } from "@/utils/format";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Customer, Order } from "@interfaces/index";
 import { openTelegram } from "@utils/actions";
@@ -33,14 +34,17 @@ const CustomerDetail = () => {
 
     setLoading(true);
 
-    const unsubCustomer = db.customers.watch((data) => {
-      const found = data.find((c) => c.id === customerId);
-      if (found) {
-        setCustomer(found);
-      } else {
-        setCustomer(null);
-      }
-    }, where("__name__", "==", customerId));
+    const unsubCustomer = db.customers.watch(
+      (data) => {
+        const found = data.find((c) => c.id === customerId);
+        if (found) {
+          setCustomer(found);
+        } else {
+          setCustomer(null);
+        }
+      },
+      where("__name__", "==", customerId),
+    );
 
     const unsubProducts = db.products.watch((data) => {
       const pMap: Record<string, { name: string; price: number }> = {};
@@ -112,7 +116,7 @@ const CustomerDetail = () => {
     <>
       <Stack.Screen
         options={{
-          title: customer.name,
+          title: formatPhone(customer.phone),
           headerTitleAlign: "center",
           headerLeft: ({ tintColor }) => (
             <Pressable onPress={() => router.back()} className="p-2">

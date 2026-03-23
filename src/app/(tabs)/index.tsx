@@ -1,21 +1,31 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { Link } from "expo-router";
+import { Link, Stack } from "expo-router";
 import React from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 export default function Index() {
   return (
     <ScrollView style={styles.container}>
+      <Stack.Screen
+        options={{
+          title: "Bosh sahifa",
+          headerRight: () => (
+            <Link href="/profile" asChild>
+              <Pressable className="p-3">
+                <MaterialIcons
+                  name="account-circle"
+                  size={24}
+                  color="#6b7280"
+                />
+              </Pressable>
+            </Link>
+          ),
+        }}
+      />
       <View style={styles.grid}>
         <Link href="/leads" asChild>
           <Pressable style={styles.card}>
             <MaterialIcons name="bolt" size={32} color="#f59e0b" />
             <Text style={styles.cardText}>Yangi Leadlar</Text>
-          </Pressable>
-        </Link>
-        <Link href="/profile" asChild>
-          <Pressable style={styles.card}>
-            <MaterialIcons name="account-circle" size={32} color="#6b7280" />
-            <Text style={styles.cardText}>Profil</Text>
           </Pressable>
         </Link>
         <Link href="/products" asChild>
@@ -34,6 +44,12 @@ export default function Index() {
           <Pressable style={styles.card}>
             <MaterialIcons name="info-outline" size={32} color="#3b82f6" />
             <Text style={styles.cardText}>Biz haqimizda</Text>
+          </Pressable>
+        </Link>
+        <Link href="/customers" asChild>
+          <Pressable style={styles.card}>
+            <MaterialIcons name="people" size={32} color="#3b82f6" />
+            <Text style={styles.cardText}>Mijozlar</Text>
           </Pressable>
         </Link>
       </View>

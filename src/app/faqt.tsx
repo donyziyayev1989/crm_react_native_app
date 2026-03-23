@@ -1,17 +1,9 @@
 import Card from "@/components/Card";
-import { database } from "@/firebase/firebase";
+import CustomModal from "@/components/CustomModal";
+import { FAQ } from "@/interfaces";
+import db, { orderBy } from "@/services/database";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { Stack } from "expo-router";
-import {
-  addDoc,
-  collection,
-  deleteDoc,
-  doc,
-  onSnapshot,
-  orderBy,
-  query,
-  updateDoc,
-} from "firebase/firestore";
+import { Link, Stack } from "expo-router";
 
 import React, { useEffect, useState } from "react";
 import {
@@ -26,7 +18,7 @@ import {
 } from "react-native";
 
 export default function FAQScreen() {
-  const [faqs, setFaqs] = useState<any[]>([]);
+  const [faqs, setFaqs] = useState<FAQ[]>([]);
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [loading, setLoading] = useState(true);
@@ -34,15 +26,13 @@ export default function FAQScreen() {
   const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
-    const q = query(collection(database, "faqs"), orderBy("createdAt", "desc"));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const faqList = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      setFaqs(faqList);
-      setLoading(false);
-    });
+    const unsubscribe = db.faqs.watch(
+      (data) => {
+        setFaqs(data);
+        setLoading(false);
+      },
+      orderBy("createdAt", "desc"),
+    );
     return () => unsubscribe();
   }, []);
 
@@ -55,7 +45,7 @@ export default function FAQScreen() {
     try {
       if (editingId) {
         // Update existing FAQ
-        await updateDoc(doc(database, "faqs", editingId), {
+        await db.faqs.update(editingId, {
           question,
           answer,
           updatedAt: new Date().toISOString(),
@@ -63,7 +53,7 @@ export default function FAQScreen() {
         Alert.alert("Muvaffaqiyat", "Savol muvaffaqiyatli tahrirlandi");
       } else {
         // Add new FAQ
-        await addDoc(collection(database, "faqs"), {
+        await db.faqs.create({
           question,
           answer,
           createdAt: new Date().toISOString(),
@@ -83,8 +73,8 @@ export default function FAQScreen() {
     }
   };
 
-  const editFaq = (faq: any) => {
-    setEditingId(faq.id);
+  const editFaq = (faq: FAQ) => {
+    setEditingId(faq.id || null);
     setQuestion(faq.question);
     setAnswer(faq.answer);
     setIsAdding(true);
@@ -97,7 +87,7 @@ export default function FAQScreen() {
         text: "Ha",
         onPress: async () => {
           try {
-            await deleteDoc(doc(database, "faqs", id));
+            await db.faqs.delete(id);
           } catch (e: any) {
             Alert.alert(
               "Xatolik",
@@ -123,65 +113,57 @@ export default function FAQScreen() {
         options={{
           title: "Ko'p berilgan savol-javoblar",
           headerTransparent: false,
+          headerLeft: () => (
+            <Link href="/" asChild>
+              <Pressable className="p-3">
+                <MaterialIcons name="arrow-back" size={24} color="#6b7280" />
+              </Pressable>
+            </Link>
+          ),
           headerRight: () => (
-            <Pressable
-              style={[
-                styles.addButton,
-                { backgroundColor: isAdding ? "#f87171" : "#10b981" },
-              ]}
-              onPress={() => {
-                if (isAdding) {
-                  setIsAdding(false);
-                  setEditingId(null);
-                  setQuestion("");
-                  setAnswer("");
-                } else {
-                  setIsAdding(true);
-                }
-              }}
-            >
-              <MaterialIcons
-                name={isAdding ? "close" : "add"}
-                size={20}
-                color="#fff"
-              />
+            <Pressable className="p-3" onPress={() => setIsAdding(true)}>
+              <MaterialIcons name="add-circle" size={28} color="#6366f1" />
             </Pressable>
           ),
         }}
       />
-
-      {isAdding && (
-        <Card className="mb-4 p-4" style={styles.boxShadow}>
-          <View style={{ gap: 12 }}>
-            <Text style={styles.formTitle}>
-              {editingId ? "Savolni tahrirlash" : "Yangi savol qo'shish"}
+      <CustomModal
+        visible={isAdding}
+        onClose={() => {
+          setIsAdding(false);
+          setEditingId(null);
+          setQuestion("");
+          setAnswer("");
+        }}
+        modalTitle={editingId ? "Savolni tahrirlash" : "Yangi savol qo'shish"}
+        contentContainerStyle={{ justifyContent: "flex-end" }}
+      >
+        <View style={{ gap: 12, paddingBottom: 20 }}>
+          <TextInput
+            placeholder="Savolni kiriting..."
+            value={question}
+            onChangeText={setQuestion}
+            style={styles.input}
+            multiline
+          />
+          <TextInput
+            placeholder="Javobni kiriting..."
+            value={answer}
+            onChangeText={setAnswer}
+            style={[styles.input, styles.textArea]}
+            multiline
+          />
+          <Pressable style={styles.saveButton} onPress={handleSave}>
+            <Text style={styles.saveButtonText}>
+              {editingId ? "Yangilash" : "Saqlash"}
             </Text>
-            <TextInput
-              placeholder="Savolni kiriting..."
-              value={question}
-              onChangeText={setQuestion}
-              style={styles.input}
-              multiline
-            />
-            <TextInput
-              placeholder="Javobni kiriting..."
-              value={answer}
-              onChangeText={setAnswer}
-              style={[styles.input, styles.textArea]}
-              multiline
-            />
-            <Pressable style={styles.saveButton} onPress={handleSave}>
-              <Text style={styles.saveButtonText}>
-                {editingId ? "Yangilash" : "Saqlash"}
-              </Text>
-            </Pressable>
-          </View>
-        </Card>
-      )}
+          </Pressable>
+        </View>
+      </CustomModal>
 
       <FlatList
         data={faqs}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item.id || Math.random().toString()}
         style={{ padding: 3, margin: -3 }}
         renderItem={({ item }) => (
           <Card className="mb-3 p-4" style={styles.boxShadow}>
@@ -199,7 +181,7 @@ export default function FAQScreen() {
                 <MaterialIcons name="edit" size={22} color="#777777" />
               </Pressable>
               <Pressable
-                onPress={() => deleteFaq(item.id)}
+                onPress={() => item.id && deleteFaq(item.id)}
                 style={styles.iconButton}
               >
                 <MaterialIcons name="delete-sweep" size={22} color="#f87171" />

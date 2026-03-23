@@ -1,13 +1,14 @@
 import Card from "@/components/Card";
-import { auth, database } from "@/firebase/firebase";
+import db from "@/services/database";
+import { auth } from "@/firebase/firebase";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import { Link, Stack } from "expo-router";
 import {
   GoogleAuthProvider,
   signInWithCredential,
   signOut,
   User,
 } from "firebase/auth";
-import { doc, setDoc } from "firebase/firestore";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -89,16 +90,12 @@ export default function Profile() {
       const currentUser = userCredential.user;
 
       // Save/Update user in Firestore
-      await setDoc(
-        doc(database, "users", currentUser.uid),
-        {
-          name: currentUser.displayName || "Noma'lum foydalanuvchi",
-          email: currentUser.email || null,
-          photoURL: currentUser.photoURL || null,
-          role: "employee", // Default role
-        },
-        { merge: true },
-      );
+      await db.users.set(currentUser.uid, {
+        name: currentUser.displayName || "Noma'lum foydalanuvchi",
+        email: currentUser.email || null,
+        photoURL: currentUser.photoURL || null,
+        role: "employee", // Default role
+      });
 
       Alert.alert("Tizimga kirildi", "Muvaffaqiyatli tizimga kirdingiz!");
     } catch (error: any) {
@@ -138,8 +135,18 @@ export default function Profile() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Shaxsiy profil</Text>
-
+      <Stack.Screen
+        options={{
+          title: "Shaxsiy profil",
+          headerLeft: () => (
+            <Link href="/" asChild>
+              <Pressable className="p-3">
+                <MaterialIcons name="arrow-back" size={24} color="#6b7280" />
+              </Pressable>
+            </Link>
+          ),
+        }}
+      />
       {user ? (
         <Card>
           <View style={styles.profileHeader}>

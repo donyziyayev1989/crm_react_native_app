@@ -12,6 +12,8 @@
 //   users/{id}                            ← User (Auth UID)
 //   tags/{id}                             ← Tag
 //   rates/{id}                            ← Rate
+//   faqs/{id}                             ← FAQ
+//   lost_products/{id}                    ← LostProduct
 
 export interface User {
   id?: string; // Firebase Auth UID
@@ -107,6 +109,14 @@ export interface Rate {
   id?: string;
   name: string;
   rate: number;
+}
+
+export interface FAQ {
+  id?: string;
+  question: string;
+  answer: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Lead {

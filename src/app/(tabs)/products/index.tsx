@@ -3,7 +3,7 @@ import CustomModal from "@/components/CustomModal";
 import { Product } from "@/interfaces";
 import db, { orderBy } from "@/services/database";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { Stack } from "expo-router";
+import { Link, Stack } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import {
@@ -115,7 +115,18 @@ export default function ProductsScreen() {
 
   return (
     <View style={styles.container}>
-      <Stack.Screen options={{ title: "Mahsulotlar" }} />
+      <Stack.Screen
+        options={{
+          title: "Mahsulotlar",
+          headerLeft: () => (
+            <Link href="/" asChild>
+              <Pressable className="p-3">
+                <MaterialIcons name="arrow-back" size={24} color="#6b7280" />
+              </Pressable>
+            </Link>
+          ),
+        }}
+      />
 
       <FlatList
         data={products}

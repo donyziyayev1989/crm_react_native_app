@@ -1,5 +1,5 @@
 import Card from "@/components/Card";
-import db from "@/services/database";
+import db, { where } from "@/services/database";
 import { formatPhone } from "@/utils/format";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Customer } from "@interfaces/index";
@@ -17,6 +17,19 @@ const CustomerList = ({ data }: { data: Customer[] }) => {
 
   const [listData, setListData] = useState<Customer[]>(data);
   const [tags, setTags] = useState<any[]>([]);
+  const [unreadChatIds, setUnreadChatIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    const unsubscribe = db.lead_chats.watch((chats) => {
+      const ids = chats
+        .filter((c) => (c.unread_count || 0) > 0)
+        .map((c) => c.id || c.lead_id)
+        .filter(Boolean) as string[];
+      setUnreadChatIds(new Set(ids));
+    }, where("unread_count", ">", 0));
+
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     db.tags.list().then(setTags);
@@ -110,7 +123,13 @@ const CustomerList = ({ data }: { data: Customer[] }) => {
         data={listData}
         contentContainerStyle={{ padding: 8, gap: 8 }}
         renderItem={({ item }) => (
-          <View className="bg-white rounded-2xl overflow-hidden shadow-sm shadow-slate-400/30">
+          <View
+            className={`${
+              item.id && unreadChatIds.has(item.id)
+                ? "bg-green-50 shadow-green-200/50"
+                : "bg-white shadow-slate-400/30"
+            } rounded-2xl overflow-hidden shadow-sm`}
+          >
             <ReanimatedSwipeable
               ref={
                 ((ref: any) => {
@@ -126,11 +145,32 @@ const CustomerList = ({ data }: { data: Customer[] }) => {
               <Pressable
                 onPress={() => item.id && router.push(`/customers/${item.id}`)}
               >
-                <Card>
+                <Card
+                  className={
+                    item.id && unreadChatIds.has(item.id) ? "bg-green-50" : ""
+                  }
+                >
                   <View className="flex-row justify-between mb-1">
-                    <Text className="text-lg font-semibold text-gray-900">
-                      {item.name}
-                    </Text>
+                    <View className="flex-row items-center flex-1">
+                      <Text className="text-lg font-semibold text-gray-900 pr-2">
+                        {item.name}
+                      </Text>
+                      {item.id && unreadChatIds.has(item.id) && (
+                        <View className="bg-green-500 rounded-full w-2.5 h-2.5 shadow-sm shadow-green-400" />
+                      )}
+                    </View>
+                    {item.id && unreadChatIds.has(item.id) && (
+                      <View className="bg-green-50 flex-row items-center px-2 py-1 rounded-full border border-green-200 shadow-sm">
+                        <MaterialIcons
+                          name="chat-bubble"
+                          size={10}
+                          color="#10b981"
+                        />
+                        <Text className="text-[9px] font-black text-green-700 ml-1 tracking-tighter uppercase">
+                          Yangi
+                        </Text>
+                      </View>
+                    )}
                     <View className="flex-row gap-1 items-center">
                       <MaterialIcons
                         name="location-pin"

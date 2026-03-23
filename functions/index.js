@@ -485,37 +485,55 @@ exports.telegramWebhook = functions.https.onRequest(async (req, res) => {
     return res.status(200).send("ok");
   }
 
-  // ─── Chat Muloqoti (Existing Lead or Fallback) ─────────────────────────────
+  // ─── Chat Muloqoti (Existing Lead/Customer or Fallback) ──────────────────
   if (text && (!sessionSnap.exists || sessionData.step === "start")) {
-    const leadsSnap = await db
+    // 1. Avval lead-lar orasidan qidiramiz
+    let targetSnap = await db
       .collection("leads")
       .where("telegram_id", "==", telegramId)
       .limit(1)
       .get();
 
-    if (!leadsSnap.empty) {
-      const lead = leadsSnap.docs[0];
-      const leadId = lead.id;
+    // 2. Agar lead topilmasa, mijozlar (customers) orasidan qidiramiz
+    if (targetSnap.empty) {
+      targetSnap = await db
+        .collection("customers")
+        .where("telegram_id", "==", telegramId)
+        .limit(1)
+        .get();
+    }
+
+    if (!targetSnap.empty) {
+      const targetDoc = targetSnap.docs[0];
+      const targetId = targetDoc.id;
 
       // 1. Chat konteynerini yangilash (Parent Doc)
-      await db.collection("lead_chats").doc(leadId).set(
-        {
-          lead_id: leadId,
-          last_message: text,
-          last_timestamp: new Date().toISOString(),
-        },
-        { merge: true },
-      );
+      await db
+        .collection("lead_chats")
+        .doc(targetId)
+        .set(
+          {
+            lead_id: targetId,
+            last_message: text,
+            last_timestamp: new Date().toISOString(),
+            unread_count: admin.firestore.FieldValue.increment(1),
+          },
+          { merge: true },
+        );
 
       // 2. Sub-collectionga xabar qo'shish
-      await db.collection("lead_chats").doc(leadId).collection("messages").add({
-        text: text,
-        sender: "customer",
-        timestamp: new Date().toISOString(),
-      });
+      await db
+        .collection("lead_chats")
+        .doc(targetId)
+        .collection("messages")
+        .add({
+          text: text,
+          sender: "customer",
+          timestamp: new Date().toISOString(),
+        });
       return res.status(200).send("ok");
     } else {
-      // If no session and no lead, maybe show main menu
+      // If no session and no lead/customer, show main menu
       await sendMessage(chatId, "Iltimos, menyudan foydalaning:", MAIN_MENU);
       return res.status(200).send("ok");
     }

@@ -1,3 +1,4 @@
+import { useRouter } from "expo-router";
 import { LeadMessage } from "@/interfaces";
 import db, { orderBy } from "@/services/database";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
@@ -31,18 +32,34 @@ const TelegramChat = ({
   onClose,
   headerHeight = 0,
 }: TelegramChatProps) => {
+  const router = useRouter();
   const [history, setHistory] = useState<LeadMessage[]>([]);
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
+  const [isCustomer, setIsCustomer] = useState<boolean | null>(null);
   const scrollViewRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     if (!chatId) return;
 
+    // Reset unread count when chat is opened
+    db.lead_chats
+      .set(chatId, { unread_count: 0, lead_id: chatId })
+      .catch(console.error);
+
     // Realtime watch xabarlar uchun
     const unsubscribe = db.lead_messages(chatId).watch(
       (msgs) => {
         setHistory(msgs);
+
+        // Oxirgi xabar mijozdan bo'lsa unread_count ni 0 qilish
+        const lastMsg = msgs[msgs.length - 1];
+        if (lastMsg && lastMsg.sender === "customer") {
+          db.lead_chats
+            .set(chatId, { unread_count: 0, lead_id: chatId })
+            .catch(console.error);
+        }
+
         setTimeout(() => {
           scrollViewRef.current?.scrollToEnd({ animated: true });
         }, 100);
@@ -51,6 +68,11 @@ const TelegramChat = ({
     );
 
     return () => unsubscribe();
+  }, [chatId]);
+
+  useEffect(() => {
+    if (!chatId) return;
+    db.customers.get(chatId).then((doc) => setIsCustomer(!!doc));
   }, [chatId]);
 
   const handleSendMessage = async () => {
@@ -63,19 +85,11 @@ const TelegramChat = ({
       await openTelegramUtil(targetIdentifier, message);
 
       // 2. Chat konteynerini yangilash
-      try {
-        await db.lead_chats.update(chatId, {
-          last_message: message,
-          last_timestamp: now,
-        });
-      } catch (err) {
-        // Hujjat yo'q bo'lsa yaratish
-        await db.lead_chats.update(chatId, {
-          lead_id: chatId,
-          last_message: message,
-          last_timestamp: now,
-        } as any);
-      }
+      await db.lead_chats.set(chatId, {
+        lead_id: chatId,
+        last_message: message,
+        last_timestamp: now,
+      });
 
       // 3. Xabarni saqlash
       await db.lead_messages(chatId).create({
@@ -106,6 +120,19 @@ const TelegramChat = ({
         <View style={styles.headerInfo}>
           <MaterialIcons name="telegram" size={24} color="#0088cc" />
           <Text style={styles.headerTitle}>{title || "Telegram Chat"}</Text>
+          {isCustomer !== null && (
+            <Pressable
+              onPress={() => {
+                onClose?.();
+                router.push(
+                  isCustomer ? `/customers/${chatId}` : `/leads/${chatId}`
+                );
+              }}
+              className="p-1"
+            >
+              <MaterialIcons name="info-outline" size={22} color="#94a3b8" />
+            </Pressable>
+          )}
         </View>
         {onClose && (
           <Pressable onPress={onClose} style={styles.closeBtn}>
@@ -239,7 +266,8 @@ const styles = StyleSheet.create({
   },
   messageBubble: {
     maxWidth: "85%",
-    padding: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
     borderRadius: 20,
   },
   myMessage: {

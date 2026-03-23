@@ -45,10 +45,10 @@ export default function TabLayout() {
           name="orders"
           options={{
             title: "Xaridlar",
-            headerShown: false,
             tabBarIcon: ({ color, size }) => (
               <MaterialIcons name="assignment" size={size} color={color} />
             ),
+            headerShown: false,
           }}
         />
         <Tabs.Screen
@@ -81,13 +81,17 @@ export default function TabLayout() {
               <MaterialIcons name="people" size={size} color={color} />
             ),
             headerShown: false,
+            href: null,
           }}
-          listeners={({ navigation }) => ({
-            tabPress: (e) => {
-              // Customers tabini bosganda stackni boshiga qaytarish
-              navigation.navigate("customers", { screen: "index" });
-            },
-          })}
+        />
+        <Tabs.Screen
+          name="messages/index"
+          options={{
+            title: "Habarlar",
+            tabBarIcon: ({ color, size }) => (
+              <MaterialIcons name="message" size={size} color={color} />
+            ),
+          }}
         />
         <Tabs.Screen
           name="lots"
