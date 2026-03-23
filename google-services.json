@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "537571948273",
+    "project_id": "crm-app-73726",
+    "storage_bucket": "crm-app-73726.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:537571948273:android:6ac035e7ada7a284089b50",
+        "android_client_info": {
+          "package_name": "com.anonymous.sale"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "537571948273-hhdhcr8cmfjlnin71jvkomvgroo539fn.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.anonymous.sale",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "537571948273-2a1i0q2shc4c8rtmvmdd30f6qd3a3hu7.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA8YON2DEP6IzWCR4F1edp9MN-gKu-faeA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "537571948273-2a1i0q2shc4c8rtmvmdd30f6qd3a3hu7.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

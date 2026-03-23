@@ -6,14 +6,9 @@ import db, { database, where } from "@/services/database";
 import { formatPhone } from "@/utils/format";
 import { Customer, District, ProductLot, Region } from "@interfaces/index";
 import { useRouter } from "expo-router";
-import { collection, query } from "firebase/firestore";
 import React, { useEffect, useMemo, useState } from "react";
-import {
-  useCollectionData,
-} from "react-firebase-hooks/firestore";
 import { Controller, useForm } from "react-hook-form";
 import { Rating } from "react-native-ratings";
-
 import {
   Alert,
   KeyboardAvoidingView,
@@ -42,14 +37,45 @@ const CustomerForm = ({
 }: CustomerFormProps) => {
   const router = useRouter();
   const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
-  // ─── Regions ──────────────────────────────────────────────────────────────
-  // ─── Regions ──────────────────────────────────────────────────────────────
-  const [regionsData] = useCollectionData<Region & { id: string }>(
-    collection(database, "regions") as any,
-  );
+
+  // ─── Data States ──────────────────────────────────────────────────────────
+  const [regionsData, setRegionsData] = useState<(Region & { id: string })[]>([]);
+  const [districtsData, setDistrictsData] = useState<District[]>([]);
+  const [lotsData, setLotsData] = useState<(ProductLot & { id: string })[]>([]);
+  const [tagsData, setTagsData] = useState<{ name: string; id: string }[]>([]);
+
+  // ─── Realtime Subscriptions ───────────────────────────────────────────────
+  useEffect(() => {
+    // Regions
+    const unsubRegions = db.regions.watch(setRegionsData as any);
+    // Lots
+    const unsubLots = db.lots.watch(setLotsData as any);
+    // Tags
+    const unsubTags = db.tags.watch(setTagsData as any);
+
+    return () => {
+      unsubRegions();
+      unsubLots();
+      unsubTags();
+    };
+  }, []);
+
+  // Districts subscription (Filtered by region)
+  useEffect(() => {
+    if (selectedRegionId) {
+      const unsubDistricts = db.districts.watch(
+        setDistrictsData as any,
+        where("regionId", "==", selectedRegionId)
+      );
+      return unsubDistricts;
+    } else {
+      setDistrictsData([]);
+    }
+  }, [selectedRegionId]);
+
   // Viloyatlar yuklanganda yoki initialData o'zgarganda ID ni aniqlash
   useEffect(() => {
-    if (regionsData && initialData?.region_name) {
+    if (regionsData.length > 0 && initialData?.region_name) {
       const val = initialData.region_name.trim();
       const normalize = (s: string) => s.toLowerCase().replace(/['` ]/g, "");
       const normalizedValue = normalize(val);
@@ -69,31 +95,6 @@ const CustomerForm = ({
       }
     }
   }, [regionsData, initialData?.region_name]);
-
-  // ─── Districts (Flat collection query) ────────────────────────────────────
-  const districtsQuery = useMemo(
-    () =>
-      selectedRegionId
-        ? query(
-            collection(database, "districts"),
-            where("regionId", "==", selectedRegionId),
-          )
-        : null,
-    [selectedRegionId],
-  );
-  const [districtsData] = useCollectionData<District>(districtsQuery as any, {
-    initialValue: [],
-  });
-
-  // ─── Lots (Partiyalar) ────────────────────────────────────────────────────
-  const [lotsData] = useCollectionData<ProductLot & { id: string }>(
-    collection(database, "lots") as any,
-  );
-
-  // ─── Tags ─────────────────────────────────────────────────────────────────
-  const [tagsData] = useCollectionData<{ name: string; id: string }>(
-    collection(database, "tags") as any,
-  );
 
   // ─── Select options ───────────────────────────────────────────────────────
   const regions = useMemo(

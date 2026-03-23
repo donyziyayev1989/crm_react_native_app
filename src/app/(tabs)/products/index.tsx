@@ -122,7 +122,7 @@ export default function ProductsScreen() {
         keyExtractor={(item) => item.id!}
         contentContainerStyle={{ padding: 16 }}
         renderItem={({ item }) => (
-          <Card className="mb-3 shadow-sm shadow-slate-400/30">
+          <Card className="mb-3" style={styles.boxShadow}>
             <View className="flex-row justify-between items-center">
               <View className="flex-1">
                 <Text className="text-lg font-bold text-gray-800">
@@ -252,5 +252,12 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     padding: 24,
     paddingBottom: 40,
+  },
+  boxShadow: {
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
   },
 });

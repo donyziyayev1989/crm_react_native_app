@@ -1,13 +1,11 @@
 import Card from "@/components/Card";
-import db, { database } from "@/services/database";
+import db from "@/services/database";
 import { formatPhone } from "@/utils/format";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Customer } from "@interfaces/index";
 import { callPhone, openTelegram } from "@utils/actions";
 import { useRouter } from "expo-router";
-import { collection } from "firebase/firestore";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useCollectionOnce } from "react-firebase-hooks/firestore";
 import { Alert, FlatList, Pressable, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
@@ -18,18 +16,19 @@ const CustomerList = ({ data }: { data: Customer[] }) => {
   const prevOpenedRow = useRef<string | null>(null);
 
   const [listData, setListData] = useState<Customer[]>(data);
+  const [tags, setTags] = useState<any[]>([]);
 
-  const [tagsSnap] = useCollectionOnce(collection(database, "tags") as any);
+  useEffect(() => {
+    db.tags.list().then(setTags);
+  }, []);
 
   const tagsMap = useMemo(() => {
     const map: Record<string, string> = {};
-    if (tagsSnap && tagsSnap.docs) {
-      tagsSnap.docs.forEach((d) => {
-        map[d.id] = (d.data().name as string) || d.id;
-      });
-    }
+    tags.forEach((t) => {
+      map[t.id] = (t.name as string) || t.id;
+    });
     return map;
-  }, [tagsSnap]);
+  }, [tags]);
 
   useEffect(() => {
     setListData(data);
