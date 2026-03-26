@@ -54,6 +54,14 @@ interface OrderModalProps {
   initialCustomer?: (Customer & { id: string }) | null;
 }
 
+const normalizeStr = (s: string) =>
+  s
+    ? s
+        .trim()
+        .toLowerCase()
+        .replace(/['`‘’ʻʼ]/g, "")
+    : "";
+
 const OrderModal: React.FC<OrderModalProps> = ({
   visible,
   onClose,
@@ -65,6 +73,10 @@ const OrderModal: React.FC<OrderModalProps> = ({
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
+  const [filteredCustomers, setFilteredCustomers] = useState<
+    (Customer & { id: string })[]
+  >([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
   const [customers, setCustomers] = useState<(Customer & { id: string })[]>([]);
   const [products, setProducts] = useState<(Product & { id: string })[]>([]);
@@ -79,14 +91,45 @@ const OrderModal: React.FC<OrderModalProps> = ({
         return [];
       }
       const region = regions.find(
-        (r: Region) =>
-          r.name.trim().toLowerCase() === regionName.trim().toLowerCase(),
+        (r: Region) => normalizeStr(r.name) === normalizeStr(regionName),
       );
       if (region?.id) {
-        const ds = (await db.districts.list(
-          where("regionId", "==", region.id),
-          orderBy("name", "asc"),
-        )) as (District & { id: string })[];
+        // Handle inconsistencies between regions.js IDs and districts.js region_ids in DB
+        const idMap: Record<string, string[]> = {
+          toshkent_sh: ["Toshkent sh.", "Toshkent shahri", "toshkent_sh"],
+          toshkent_v: ["Toshkent vil.", "Toshkent viloyati", "toshkent_v"],
+          fargona: ["Fargona", "Farg'ona", "fargona"],
+          andijon: ["Andijon", "andijon"],
+          buxoro: ["Buxoro", "buxoro"],
+          jizzax: ["Jizzax", "jizzax"],
+          xorazm: ["Xorazm", "xorazm"],
+          namangan: ["Namangan", "namangan"],
+          navoiy: ["Navoiy", "navoiy"],
+          qashqadaryo: ["Qashqadaryo", "qashqadaryo"],
+          qoraqalpogiston: [
+            "Qoraqalpog'iston Respublikasi",
+            "Qoraqalpog'iston",
+            "qoraqalpogiston",
+          ],
+          samarqand: ["Samarqand", "samarqand"],
+          sirdaryo: ["Sirdaryo", "sirdaryo"],
+          surxondaryo: ["Surxondaryo", "surxondaryo"],
+        };
+
+        const possibleIds = idMap[region.id] || [region.id];
+        let ds: (District & { id: string })[] = [];
+
+        for (const pid of possibleIds) {
+          const res = (await db.districts.list(
+            where("regionId", "==", pid),
+            orderBy("name", "asc"),
+          )) as (District & { id: string })[];
+          if (res.length > 0) {
+            ds = res;
+            break;
+          }
+        }
+
         setDistricts(ds);
         return ds;
       }
@@ -94,6 +137,44 @@ const OrderModal: React.FC<OrderModalProps> = ({
       return [];
     },
     [regions],
+  );
+
+  const selectCustomer = useCallback(
+    async (customer: Customer & { id: string }) => {
+      let regName = customer.region_name || "";
+      let distName = customer.district_name || "";
+
+      let regId = "";
+      if (regName) {
+        const reg = regions.find(
+          (r) => normalizeStr(r.name) === normalizeStr(regName),
+        );
+        if (reg) {
+          regId = reg.id!;
+          regName = reg.name; // Use official name from list
+          setSelectedRegionId(regId);
+          const ds = await fetchDistrictsByRegionName(reg.name);
+          // Also try to find official district name
+          if (distName) {
+            const district = ds.find(
+              (d) => normalizeStr(d.name) === normalizeStr(distName),
+            );
+            if (district) distName = district.name; // Use official name
+          }
+        }
+      }
+
+      setForm((f: typeof emptyForm) => ({
+        ...f,
+        customer_id: customer.id!,
+        customer_phone: customer.phone,
+        customer_name: customer.name,
+        region_name: regName || f.region_name,
+        district_name: distName || "",
+      }));
+      setShowSuggestions(false);
+    },
+    [regions, fetchDistrictsByRegionName],
   );
 
   const handlePhoneChange = useCallback(
@@ -109,28 +190,7 @@ const OrderModal: React.FC<OrderModalProps> = ({
         });
 
         if (found) {
-          let regId = "";
-          if (found.region_name) {
-            const reg = regions.find(
-              (r) =>
-                r.name.trim().toLowerCase() ===
-                found.region_name.trim().toLowerCase(),
-            );
-            if (reg) {
-              regId = reg.id!;
-              setSelectedRegionId(regId);
-              await fetchDistrictsByRegionName(reg.name);
-            }
-          }
-
-          setForm((f: typeof emptyForm) => ({
-            ...f,
-            customer_phone: phone,
-            customer_id: found.id!,
-            customer_name: found.name,
-            region_name: found.region_name || f.region_name,
-            district_name: found.district_name || "",
-          }));
+          selectCustomer(found);
           return;
         }
       }
@@ -142,7 +202,23 @@ const OrderModal: React.FC<OrderModalProps> = ({
         customer_id: "",
       }));
     },
-    [customers, fetchDistrictsByRegionName, regions],
+    [customers, regions, fetchDistrictsByRegionName, selectCustomer],
+  );
+
+  const handleNameChange = useCallback(
+    (val: string) => {
+      setForm((f) => ({ ...f, customer_name: val }));
+      if (val.trim().length >= 2) {
+        const filtered = customers.filter((c) =>
+          c.name.toLowerCase().includes(val.toLowerCase()),
+        );
+        setFilteredCustomers(filtered);
+        setShowSuggestions(filtered.length > 0);
+      } else {
+        setShowSuggestions(false);
+      }
+    },
+    [customers],
   );
 
   useEffect(() => {
@@ -303,7 +379,22 @@ const OrderModal: React.FC<OrderModalProps> = ({
           order_ids: [],
         };
         finalCustomerId = await db.customers.create(newCustomer);
-        // Refresh local customers list if needed, or it will be refreshed on next mount
+      } else {
+        // If customer exists but is missing region/district, update it
+        const existing = customers.find((c) => c.id === finalCustomerId);
+        if (existing) {
+          const updates: Partial<Customer> = {};
+          if (!existing.region_name && form.region_name) {
+            updates.region_name = form.region_name;
+          }
+          if (!existing.district_name && form.district_name) {
+            updates.district_name = form.district_name;
+          }
+
+          if (Object.keys(updates).length > 0) {
+            await db.customers.update(finalCustomerId, updates);
+          }
+        }
       }
 
       const orderData: Omit<Order, "id"> = {
@@ -390,14 +481,36 @@ const OrderModal: React.FC<OrderModalProps> = ({
               />
 
               <Text style={styles.fieldLabel}>Mijoz ismi</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Mijoz ismini kiriting"
-                value={form.customer_name}
-                onChangeText={(v: string) =>
-                  setForm((f: typeof emptyForm) => ({ ...f, customer_name: v }))
-                }
-              />
+              <View style={{ zIndex: 999 }}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Mijoz ismini kiriting"
+                  value={form.customer_name}
+                  onChangeText={handleNameChange}
+                  onBlur={() =>
+                    setTimeout(() => setShowSuggestions(false), 200)
+                  }
+                />
+                {showSuggestions && (
+                  <View style={styles.suggestionsContainer}>
+                    <ScrollView
+                      keyboardShouldPersistTaps="always"
+                      style={{ maxHeight: 200 }}
+                    >
+                      {filteredCustomers.map((c) => (
+                        <Pressable
+                          key={c.id}
+                          style={styles.suggestionItem}
+                          onPress={() => selectCustomer(c)}
+                        >
+                          <Text style={styles.suggestionName}>{c.name}</Text>
+                          <Text style={styles.suggestionPhone}>{c.phone}</Text>
+                        </Pressable>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+              </View>
 
               <Text style={styles.fieldLabel}>Viloyat</Text>
               <Select
@@ -544,7 +657,9 @@ const OrderModal: React.FC<OrderModalProps> = ({
             ))}
           </View>
 
-          <View className="flex flex-row flex-1 gap-2 mt-3">
+          <View
+            style={{ flexDirection: "row", flex: 1, gap: 8, marginTop: 12 }}
+          >
             <Pressable
               style={styles.discardBtn}
               onPress={handleClose}
@@ -629,5 +744,36 @@ const styles = StyleSheet.create({
     marginTop: 60,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
+  },
+  suggestionsContainer: {
+    position: "absolute",
+    top: 50,
+    left: 0,
+    right: 0,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderRadius: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+    zIndex: 1000,
+  },
+  suggestionItem: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f3f4f6",
+  },
+  suggestionName: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#111827",
+  },
+  suggestionPhone: {
+    fontSize: 12,
+    color: "#6b7280",
+    marginTop: 2,
   },
 });

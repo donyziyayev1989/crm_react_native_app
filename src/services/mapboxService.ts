@@ -1,4 +1,4 @@
-import axios from "axios";
+// Removed axios in favor of native fetch API for better compatibility and error handling
 
 const MAPBOX_ACCESS_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN || "";
 
@@ -20,9 +20,6 @@ export interface MapboxMatrix {
 }
 
 export const MapboxService = {
-  /**
-   * Geocode a region and district to coordinates
-   */
   geocode: async (
     region: string,
     district?: string,
@@ -31,14 +28,16 @@ export const MapboxService = {
       const query = `${district ? district + ", " : ""}${region}, Uzbekistan`;
       const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${MAPBOX_ACCESS_TOKEN}&limit=1&types=district,place,locality,region`;
 
-      const response = await axios.get(url);
-      if (response.data.features && response.data.features.length > 0) {
-        const [lng, lat] = response.data.features[0].center;
+      const response = await fetch(url);
+      if (!response.ok) return null;
+      const data = await response.json();
+
+      if (data.features && data.features.length > 0) {
+        const [lng, lat] = data.features[0].center;
         return { latitude: lat, longitude: lng };
       }
       return null;
     } catch (error) {
-      console.error("Geocoding error:", error);
       return null;
     }
   },
@@ -49,28 +48,36 @@ export const MapboxService = {
   getOptimizedRoute: async (
     coordinates: Coordinate[],
   ): Promise<MapboxRoute | null> => {
-    if (coordinates.length < 2) return null;
-    if (coordinates.length > 12) {
-      // Optimization API limited to 12 coordinates for common plans
-      // We might need to split or use Directions API if more, but for now let's use the first 12
-      coordinates = coordinates.slice(0, 12);
-    }
+    // Basic validation
+    const validPoints = coordinates.filter(
+      (c) => c && typeof c.latitude === "number" && typeof c.longitude === "number",
+    );
+    if (validPoints.length < 2) return null;
+    const points = validPoints.length > 12 ? validPoints.slice(0, 12) : validPoints;
 
     try {
-      const coordsString = coordinates
+      const coordsString = points
         .map((c) => `${c.longitude},${c.latitude}`)
         .join(";");
-      // 'driving-traffic' real vaqtdagi tirbandliklarni hisobga oladi
-      const url = `https://api.mapbox.com/optimized-trips/v1/mapbox/driving-traffic/${coordsString}?access_token=${MAPBOX_ACCESS_TOKEN}&geometries=geojson&overview=full&steps=true&source=first`;
+      
+      const tryFetch = async (profile: string) => {
+        const url = `https://api.mapbox.com/optimized-trips/v1/mapbox/${profile}/${coordsString}?access_token=${MAPBOX_ACCESS_TOKEN}&geometries=geojson&overview=full&steps=true&source=first`;
+        const res = await fetch(url);
+        if (res.ok) return await res.json();
+        return null;
+      };
 
-      const response = await axios.get(url);
-      if (response.data.trips && response.data.trips.length > 0) {
-        const trip = response.data.trips[0];
+      // Try driving-traffic first, then fallback to driving
+      let data = await tryFetch("driving-traffic");
+      if (!data) data = await tryFetch("driving");
+
+      if (data && data.trips && data.trips.length > 0) {
+        const trip = data.trips[0];
         return {
           geometry: trip.geometry,
           distance: trip.distance,
           duration: trip.duration,
-          waypoints: response.data.waypoints || [],
+          waypoints: data.waypoints || [],
         };
       }
       return null;
@@ -103,17 +110,31 @@ export const MapboxService = {
   getDirections: async (
     coordinates: Coordinate[],
   ): Promise<MapboxRoute | null> => {
-    if (coordinates.length < 2) return null;
+    const validPoints = coordinates.filter(
+      (c) => c && typeof c.latitude === "number" && typeof c.longitude === "number",
+    );
+    if (validPoints.length < 2) return null;
+    // Mapbox Directions API supports max 25 coordinates
+    const points = validPoints.length > 25 ? validPoints.slice(0, 25) : validPoints;
 
     try {
-      const coordsString = coordinates
+      const coordsString = points
         .map((c) => `${c.longitude},${c.latitude}`)
         .join(";");
-      const url = `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${coordsString}?access_token=${MAPBOX_ACCESS_TOKEN}&geometries=geojson&overview=full&steps=true&exclude=controlled_border`;
+      
+      const tryFetch = async (profile: string) => {
+        const url = `https://api.mapbox.com/directions/v5/mapbox/${profile}/${coordsString}?access_token=${MAPBOX_ACCESS_TOKEN}&geometries=geojson&overview=full&steps=true&exclude=controlled_border`;
+        const res = await fetch(url);
+        if (res.ok) return await res.json();
+        return null;
+      };
 
-      const response = await axios.get(url);
-      if (response.data.routes && response.data.routes.length > 0) {
-        const route = response.data.routes[0];
+      // Try driving-traffic first, fallback to standard driving
+      let data = await tryFetch("driving-traffic");
+      if (!data) data = await tryFetch("driving");
+
+      if (data && data.routes && data.routes.length > 0) {
+        const route = data.routes[0];
         return {
           geometry: route.geometry,
           distance: route.distance,
@@ -135,8 +156,7 @@ export const MapboxService = {
     coordinates: Coordinate[],
   ): Promise<MapboxMatrix | null> => {
     if (coordinates.length < 2) return null;
-
-    // Matrix API limits to 25. If more, we truncate for safety
+    // Matrix API limits to 25
     const coords = coordinates.slice(0, 25);
 
     try {
@@ -145,16 +165,53 @@ export const MapboxService = {
         .join(";");
       const url = `https://api.mapbox.com/directions-matrix/v1/mapbox/driving/${coordsString}?annotations=distance,duration&access_token=${MAPBOX_ACCESS_TOKEN}&exclude=controlled_border`;
 
-      const response = await axios.get(url);
-      if (response.data.distances && response.data.durations) {
+      const response = await fetch(url);
+      if (!response.ok) return null;
+      const data = await response.json();
+
+      if (data.distances && data.durations) {
         return {
-          distances: response.data.distances,
-          durations: response.data.durations,
+          distances: data.distances,
+          durations: data.durations,
         };
       }
       return null;
     } catch (error) {
       console.error("Matrix error:", error);
+      return null;
+    }
+  },
+  /**
+   * Reverse geocode coordinates to region and district
+   */
+  reverseGeocode: async (
+    lat: number,
+    lng: number,
+  ): Promise<{ region: string; district: string } | null> => {
+    try {
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${MAPBOX_ACCESS_TOKEN}&types=region,district&limit=5`;
+      const response = await fetch(url);
+      if (!response.ok) return null;
+      const data = await response.json();
+
+      let region = "";
+      let district = "";
+
+      if (data.features) {
+        const regionFeat = data.features.find((f: any) =>
+          f.place_type.includes("region"),
+        );
+        const districtFeat = data.features.find((f: any) =>
+          f.place_type.includes("district"),
+        );
+
+        region = regionFeat?.text || "";
+        district = districtFeat?.text || "";
+      }
+
+      return { region, district };
+    } catch (error) {
+      console.error("Reverse geocoding error:", error);
       return null;
     }
   },

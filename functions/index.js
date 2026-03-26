@@ -91,7 +91,7 @@ async function getAddressDetails(lat, lng) {
       r.includes("farg'ona") ||
       r.includes("fergana")
     )
-      region = "Fargona";
+      region = "Farg'ona";
     else if (r.includes("jizzax")) region = "Jizzax";
     else if (r.includes("xorazm")) region = "Xorazm";
     else if (r.includes("namangan")) region = "Namangan";
@@ -106,7 +106,6 @@ async function getAddressDetails(lat, lng) {
 
     return { region, district };
   } catch (err) {
-    console.error("Geocoding Error:", err.message);
     return { region: "Noma'lum viloyat", district: "Noma'lum tuman" };
   }
 }
