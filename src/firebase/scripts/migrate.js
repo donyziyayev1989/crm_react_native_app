@@ -20,20 +20,20 @@ export async function migrate() {
 
   // 2. Mapping between districts.region_id and regions.id
   const regionKeyMap = {
-    "Toshkent sh.":    "toshkent_sh",
-    "Toshkent vil.":   "toshkent_v",
-    "Andijon":         "andijon",
-    "Buxoro":          "buxoro",
-    "Fargona":         "fargona",
-    "Samarqand":       "samarqand",
-    "Namangan":        "namangan",
-    "Jizzax":          "jizzax",
-    "Xorazm":          "xorazm",
-    "Navoiy":          "navoiy",
-    "Qashqadaryo":     "qashqadaryo",
-    "Qoraqalpogiston": "qoraqalpogiston",
-    "Sirdaryo":        "sirdaryo",
-    "Surxondaryo":     "surxondaryo",
+    "Toshkent sh.": "toshkent_sh",
+    "Toshkent vil.": "toshkent_v",
+    Andijon: "andijon",
+    Buxoro: "buxoro",
+    Fargona: "fargona",
+    Samarqand: "samarqand",
+    Namangan: "namangan",
+    Jizzax: "jizzax",
+    Xorazm: "xorazm",
+    Navoiy: "navoiy",
+    Qashqadaryo: "qashqadaryo",
+    Qoraqalpogiston: "qoraqalpogiston",
+    Sirdaryo: "sirdaryo",
+    Surxondaryo: "surxondaryo",
   };
 
   // 3. Districts: districts/{id} (Flat collection with regionId)
@@ -43,7 +43,9 @@ export async function migrate() {
     const regionFirestoreId = regionKeyMap[region_id];
 
     if (!regionFirestoreId) {
-      console.warn(`  ⚠ Noma'lum region_id: "${region_id}" (district: ${name})`);
+      console.warn(
+        `  ⚠ Noma'lum region_id: "${region_id}" (district: ${name})`,
+      );
       continue;
     }
 
@@ -51,13 +53,14 @@ export async function migrate() {
       name: name,
       regionId: regionFirestoreId,
     });
-    
+
     count++;
     if (count % 20 === 0) {
       console.log(`  ... ${count} ta tuman saqlandi`);
     }
   }
 
-  console.log(`✅ Migration muvaffaqiyatli yakunlandi! Jami: ${count} ta tuman.`);
+  console.log(
+    `✅ Migration muvaffaqiyatli yakunlandi! Jami: ${count} ta tuman.`,
+  );
 }
-

@@ -1,13 +1,16 @@
-import { useRouter } from "expo-router";
-import { LeadMessage } from "@/interfaces";
-import db, { orderBy } from "@/services/database";
+import { auth } from "@/firebase/firebase";
+import { LeadMessage, User } from "@/interfaces";
+import db, { orderBy, where } from "@/services/database";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { openTelegram as openTelegramUtil } from "@utils/actions";
+import { useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -34,6 +37,8 @@ const TelegramChat = ({
 }: TelegramChatProps) => {
   const router = useRouter();
   const [history, setHistory] = useState<LeadMessage[]>([]);
+  const [users, setUsers] = useState<Record<string, User>>({});
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [isCustomer, setIsCustomer] = useState<boolean | null>(null);
@@ -61,8 +66,8 @@ const TelegramChat = ({
         }
 
         setTimeout(() => {
-          scrollViewRef.current?.scrollToEnd({ animated: true });
-        }, 100);
+          scrollViewRef.current?.scrollToEnd();
+        }, 0);
       },
       orderBy("timestamp", "asc"),
     );
@@ -71,8 +76,27 @@ const TelegramChat = ({
   }, [chatId]);
 
   useEffect(() => {
+    // Fetch users for avatars
+    const unsubUsers = db.users.watch((allUsers) => {
+      const usersMap: Record<string, User> = {};
+      allUsers.forEach((u) => {
+        if (u.id) usersMap[u.id] = u;
+      });
+      setUsers(usersMap);
+    });
+    return () => unsubUsers();
+  }, []);
+
+  useEffect(() => {
     if (!chatId) return;
-    db.customers.get(chatId).then((doc) => setIsCustomer(!!doc));
+    const unsub = db.customers.watch(
+      (data) => {
+        const found = data.find((c) => c.id === chatId);
+        setIsCustomer(!!found);
+      },
+      where("__name__", "==", chatId),
+    );
+    return () => unsub();
   }, [chatId]);
 
   const handleSendMessage = async () => {
@@ -81,33 +105,78 @@ const TelegramChat = ({
     setSending(true);
     const now = new Date().toISOString();
     try {
-      // 1. Telegram bot orqali yuborish
-      await openTelegramUtil(targetIdentifier, message);
-
-      // 2. Chat konteynerini yangilash
+      // 1. Chat konteynerini yangilash
       await db.lead_chats.set(chatId, {
         lead_id: chatId,
         last_message: message,
         last_timestamp: now,
       });
-
-      // 3. Xabarni saqlash
+      setMessage("");
+      // 2. Xabarni Firestore-ga saqlash (Offline-first: bu qism har doim ishlaydi)
       await db.lead_messages(chatId).create({
         text: message,
         sender: "operator",
         timestamp: now,
+        user_id: auth.currentUser?.uid,
       });
 
-      setMessage("");
+      // 3. Telegram bot orqali yuborishga harakat qilish
+      // Eslatma: Agar offline bo'lsak, bu qism xato berishi mumkin,
+      // lekin xabar baribir Firestore-da qoladi.
+      try {
+        await openTelegramUtil(targetIdentifier, message);
+      } catch (tgErr) {
+        console.log("Telegram API sending delayed (offline?):", tgErr);
+      }
+
       setTimeout(() => {
         scrollViewRef.current?.scrollToEnd({ animated: true });
       }, 100);
     } catch (e) {
-      console.error(e);
       Alert.alert("Xato", "Xabar yuborishda xatolik yuz berdi");
     } finally {
       setSending(false);
     }
+  };
+
+  const formatDateLabel = (dateStr: string) => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    const messageDate = new Date(
+      date.getFullYear(),
+      date.getMonth(),
+      date.getDate(),
+    );
+
+    if (messageDate.getTime() === today.getTime()) return "Bugun";
+    if (messageDate.getTime() === yesterday.getTime()) return "Kecha";
+
+    const uzMonths = [
+      "yanvar",
+      "fevral",
+      "mart",
+      "aprel",
+      "may",
+      "iyun",
+      "iyul",
+      "avgust",
+      "sentabr",
+      "oktabr",
+      "noyabr",
+      "dekabr",
+    ];
+
+    const day = date.getDate();
+    const month = uzMonths[date.getMonth()];
+    const year = date.getFullYear();
+
+    return year !== now.getFullYear()
+      ? `${day} ${month} ${year}`
+      : `${day} ${month}`;
   };
 
   return (
@@ -125,7 +194,7 @@ const TelegramChat = ({
               onPress={() => {
                 onClose?.();
                 router.push(
-                  isCustomer ? `/customers/${chatId}` : `/leads/${chatId}`
+                  isCustomer ? `/customers/${chatId}` : `/leads/${chatId}`,
                 );
               }}
               className="p-1"
@@ -159,37 +228,99 @@ const TelegramChat = ({
             <Text style={styles.emptyText}>Muloqotni boshlang</Text>
           </View>
         ) : (
-          history.map((msg) => (
-            <View
-              key={msg.id}
-              style={[
-                styles.messageBubble,
-                msg.sender === "operator"
-                  ? styles.myMessage
-                  : styles.theirMessage,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.messageText,
-                  msg.sender === "operator" ? styles.myText : styles.theirText,
-                ]}
-              >
-                {msg.text}
-              </Text>
-              <Text
-                style={[
-                  styles.timestamp,
-                  msg.sender === "operator" ? styles.myTime : styles.theirTime,
-                ]}
-              >
-                {new Date(msg.timestamp).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </Text>
-            </View>
-          ))
+          history.map((msg, index) => {
+            const msgDate = new Date(msg.timestamp).toDateString();
+            const prevMsgDate =
+              index > 0
+                ? new Date(history[index - 1].timestamp).toDateString()
+                : null;
+            const showDate = msgDate !== prevMsgDate;
+
+            return (
+              <React.Fragment key={msg.id}>
+                {showDate && (
+                  <View style={styles.dateDivider}>
+                    <View style={styles.dateLabel}>
+                      <Text style={styles.dateText}>
+                        {formatDateLabel(msg.timestamp)}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+                <View
+                  style={[
+                    styles.messageContainer,
+                    msg.sender === "operator"
+                      ? styles.myContainer
+                      : styles.theirContainer,
+                  ]}
+                >
+                  {msg.sender === "operator" && (
+                    <Pressable
+                      onPress={() =>
+                        msg.user_id &&
+                        setSelectedUser(
+                          users[msg.user_id] || {
+                            name: "Noma'lum",
+                            id: msg.user_id,
+                            email: "",
+                          },
+                        )
+                      }
+                      style={styles.avatarContainer}
+                    >
+                      {msg.user_id && users[msg.user_id]?.photoURL ? (
+                        <Image
+                          source={{ uri: users[msg.user_id].photoURL! }}
+                          style={styles.avatar}
+                        />
+                      ) : (
+                        <View style={styles.avatarPlaceholder}>
+                          <Text style={styles.avatarInitial}>
+                            {msg.user_id && users[msg.user_id]
+                              ? users[msg.user_id].name.charAt(0).toUpperCase()
+                              : "O"}
+                          </Text>
+                        </View>
+                      )}
+                    </Pressable>
+                  )}
+                  <View
+                    style={[
+                      styles.messageBubble,
+                      msg.sender === "operator"
+                        ? styles.myMessage
+                        : styles.theirMessage,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.messageText,
+                        msg.sender === "operator"
+                          ? styles.myText
+                          : styles.theirText,
+                      ]}
+                    >
+                      {msg.text}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.timestamp,
+                        msg.sender === "operator"
+                          ? styles.myTime
+                          : styles.theirTime,
+                      ]}
+                    >
+                      {new Date(msg.timestamp).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </Text>
+                  </View>
+                </View>
+              </React.Fragment>
+            );
+          })
         )}
       </ScrollView>
 
@@ -216,6 +347,51 @@ const TelegramChat = ({
           )}
         </Pressable>
       </View>
+
+      <Modal
+        visible={!!selectedUser}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setSelectedUser(null)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setSelectedUser(null)}
+        >
+          <View style={styles.modalContent}>
+            {selectedUser?.photoURL ? (
+              <Image
+                source={{ uri: selectedUser.photoURL }}
+                style={styles.modalAvatar}
+              />
+            ) : (
+              <View
+                style={[
+                  styles.avatarPlaceholder,
+                  styles.modalAvatarPlaceholder,
+                ]}
+              >
+                <Text style={styles.modalAvatarInitial}>
+                  {selectedUser?.name?.charAt(0).toUpperCase() || "U"}
+                </Text>
+              </View>
+            )}
+            <Text style={styles.modalName}>{selectedUser?.name}</Text>
+            <Text style={styles.modalEmail}>{selectedUser?.email}</Text>
+            {selectedUser?.role && (
+              <View style={styles.roleBadge}>
+                <Text style={styles.roleText}>{selectedUser.role}</Text>
+              </View>
+            )}
+            <Pressable
+              style={styles.closeModalBtn}
+              onPress={() => setSelectedUser(null)}
+            >
+              <Text style={styles.closeModalBtnText}>Yopish</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
     </KeyboardAvoidingView>
   );
 };
@@ -336,5 +512,117 @@ const styles = StyleSheet.create({
   },
   disabledBtn: {
     backgroundColor: "#d1d5db",
+  },
+  dateDivider: {
+    alignItems: "center",
+    marginVertical: 12,
+  },
+  dateLabel: {
+    backgroundColor: "rgba(0,0,0,0.05)",
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  dateText: {
+    fontSize: 12,
+    color: "#6b7280",
+    fontWeight: "600",
+  },
+  messageContainer: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 8,
+    marginVertical: 2,
+  },
+  myContainer: {
+    flexDirection: "row-reverse",
+    alignSelf: "flex-end",
+  },
+  theirContainer: {
+    alignSelf: "flex-start",
+  },
+  avatarContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    overflow: "hidden",
+  },
+  avatar: {
+    width: "100%",
+    height: "100%",
+  },
+  avatarPlaceholder: {
+    width: "100%",
+    height: "100%",
+    backgroundColor: "#e5e7eb",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarInitial: {
+    fontSize: 14,
+    color: "#4b5563",
+    fontWeight: "600",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    padding: 24,
+    width: "80%",
+    alignItems: "center",
+    gap: 12,
+  },
+  modalAvatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+  },
+  modalAvatarPlaceholder: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+  },
+  modalAvatarInitial: {
+    fontSize: 32,
+    color: "#4b5563",
+    fontWeight: "600",
+  },
+  modalName: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  modalEmail: {
+    fontSize: 14,
+    color: "#6b7280",
+  },
+  roleBadge: {
+    backgroundColor: "#dbeafe",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  roleText: {
+    color: "#1d4ed8",
+    fontSize: 12,
+    fontWeight: "600",
+    textTransform: "capitalize",
+  },
+  closeModalBtn: {
+    marginTop: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    backgroundColor: "#f3f4f6",
+    borderRadius: 10,
+  },
+  closeModalBtnText: {
+    color: "#374151",
+    fontWeight: "600",
   },
 });

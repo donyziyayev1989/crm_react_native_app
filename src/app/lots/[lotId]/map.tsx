@@ -19,40 +19,42 @@ const LotMapScreen = () => {
   const [lots, setLots] = useState<(ProductLot & { id: string })[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchData = async () => {
-    if (!lotId) return;
-    try {
-      const ids =
-        selectedIds && selectedIds.trim() !== "" ? selectedIds.split(",") : [];
-
-      const [ordersData, customersData, productsData, usersData, lotsData] =
-        await Promise.all([
-          db.orders.list(where("lotId", "==", lotId)),
-          db.customers.list(),
-          db.products.list(),
-          db.users.list(),
-          db.lots.list(),
-        ]);
-
-      let filteredOrders = ordersData as (Order & { id: string })[];
-      if (ids.length > 0) {
-        filteredOrders = filteredOrders.filter((o) => ids.includes(o.id));
-      }
-
-      setOrders(filteredOrders);
-      setCustomers(customersData as (Customer & { id: string })[]);
-      setProducts(productsData as (Product & { id: string })[]);
-      setUsers(usersData as (User & { id: string })[]);
-      setLots(lotsData as (ProductLot & { id: string })[]);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    fetchData();
+    if (!lotId) return;
+    const ids =
+      selectedIds && selectedIds.trim() !== "" ? selectedIds.split(",") : [];
+
+    // Watch orders in real-time
+    const unsubscribe = db.orders.watch((allOrders) => {
+      let filtered = allOrders as (Order & { id: string })[];
+      if (ids.length > 0) {
+        filtered = filtered.filter((o) => ids.includes(o.id));
+      }
+      setOrders(filtered);
+      setLoading(false);
+    }, where("lotId", "==", lotId));
+
+    // Fetch static data once
+    const fetchOthers = async () => {
+      try {
+        const [customersData, productsData, usersData, lotsData] =
+          await Promise.all([
+            db.customers.list(),
+            db.products.list(),
+            db.users.list(),
+            db.lots.list(),
+          ]);
+        setCustomers(customersData as any);
+        setProducts(productsData as any);
+        setUsers(usersData as any);
+        setLots(lotsData as any);
+      } catch (e) {
+        console.error(e);
+      }
+    };
+    fetchOthers();
+
+    return () => unsubscribe();
   }, [lotId, selectedIds]);
 
   if (loading) {
@@ -76,7 +78,6 @@ const LotMapScreen = () => {
         products={products}
         users={users}
         lots={lots}
-        onUpdate={fetchData}
         onOrderPress={(id) => {
           router.push({
             pathname: "/orders/[orderId]",

@@ -39,6 +39,17 @@ export interface LostProduct {
   timestamp: number;
 }
 
+export interface LotExpense {
+  id?: string;
+  lotId: string; // ref → lots
+  name: string;
+  count: number;
+  price_per_unit: number;
+  total_price: number;
+  date: string;
+  timestamp: number;
+}
+
 export interface Product {
   id?: string;
   name: string;
@@ -151,6 +162,7 @@ export interface LeadMessage {
   text: string;
   sender: "operator" | "customer";
   timestamp: string; // ISO string
+  user_id?: string;
 }
 
 export interface InputProps {

@@ -159,7 +159,6 @@ const PhoneInput = ({
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
         modalTitle={"Qo'ng'iroqlar tarixi"}
-        contentContainerStyle={{ justifyContent: "flex-end" }}
         sheetStyle={{ zIndex: 1000 }}
       >
         <View style={styles.modalContent}>

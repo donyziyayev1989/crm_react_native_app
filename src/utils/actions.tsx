@@ -1,5 +1,5 @@
-import { chatEvents } from "./chat_events";
 import { Alert, Linking, Platform } from "react-native";
+import { chatEvents } from "./chat_events";
 
 export const callPhone = async (phone: string) => {
   let cleaned = phone.replace(/\D/g, "");
@@ -97,7 +97,6 @@ export const openTelegram = async (
       await Linking.openURL(url);
     }
   } catch (err) {
-    console.error("Telegram Open Error:", err);
     Alert.alert("Xatolik", "Telegram bilan bog'lanishda xatolik yuz berdi");
   }
 };

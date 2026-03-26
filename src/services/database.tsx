@@ -13,7 +13,8 @@ import {
   LeadChat,
   LeadMessage,
   FAQ,  
-  User 
+  User,
+  LotExpense
 } from "@interfaces/index";
 import * as jsFirestore from "firebase/firestore";
 import { Platform } from "react-native";
@@ -169,6 +170,7 @@ const db = {
   lead_messages: createSubCollection<LeadMessage>("lead_chats", "messages"),
   faqs: createCollection<FAQ>("faqs"),
   settings: createCollection<any>("settings"),
+  lot_expenses: createCollection<LotExpense>("lot_expenses"),
 };
 
 export default db;

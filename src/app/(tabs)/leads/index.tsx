@@ -70,8 +70,6 @@ const Leads = () => {
                 user_id: "",
               });
 
-              console.log("Customer created with ID:", customerId);
-
               // Buyurtma yaratish
               const orderId = await db.orders.create({
                 customer_id: customerId,
@@ -82,14 +80,13 @@ const Leads = () => {
                 product_price: productPrice,
                 delivery_price: 0,
                 region_name: lead.region_name || "Noma'lum",
+                district_name: lead.district_name || "Noma'lum",
                 location: lead.location,
                 rate: 0,
                 state: "new",
                 user_id: "",
                 total: productPrice * lead.product_count,
               } as any);
-
-              console.log("Order created with ID:", orderId);
 
               // Leadni o'chirish
               await db.leads.delete(lead.id);

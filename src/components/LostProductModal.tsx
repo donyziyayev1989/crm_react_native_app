@@ -1,5 +1,5 @@
 import { LostProduct, ProductLot } from "@/interfaces";
-import db from "@/services/database";
+import db, { where } from "@/services/database";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
@@ -18,6 +18,7 @@ interface LostProductModalProps {
   onClose: () => void;
   lotId: string;
   lot: (ProductLot & { id: string }) | null;
+  editLost?: (LostProduct & { id: string }) | null;
   onSuccess?: (
     newLostProduct: LostProduct & { id: string },
     newTotal: number,
@@ -29,13 +30,30 @@ const LostProductModal: React.FC<LostProductModalProps> = ({
   onClose,
   lotId,
   lot,
+  editLost,
   onSuccess,
 }) => {
-  const [lostForm, setLostForm] = useState({
+  const [lostForm, setLostForm] = React.useState({
     count: "",
     date: new Date().toISOString().split("T")[0],
   });
   const [savingLost, setSavingLost] = useState(false);
+
+  React.useEffect(() => {
+    if (visible) {
+      if (editLost) {
+        setLostForm({
+          count: editLost.count.toString(),
+          date: editLost.date,
+        });
+      } else {
+        setLostForm({
+          count: "",
+          date: new Date().toISOString().split("T")[0],
+        });
+      }
+    }
+  }, [visible, editLost]);
 
   const handleSaveLostProduct = async () => {
     if (!lostForm.count || isNaN(Number(lostForm.count))) {
@@ -45,23 +63,35 @@ const LostProductModal: React.FC<LostProductModalProps> = ({
     setSavingLost(true);
     try {
       const countNum = Number(lostForm.count);
-      const newLostData: Omit<LostProduct, "id"> = {
+
+      let newId = editLost?.id || "";
+      const data: Omit<LostProduct, "id"> = {
         lotId: lotId,
         count: countNum,
         date: lostForm.date,
-        timestamp: Date.now(),
+        timestamp: editLost?.timestamp || Date.now(),
       };
-      const newId = await db.lost_products.create(newLostData);
 
-      // Partiyadagi umumiy yo'qotishlarni yangilash
-      const newLostTotal = (lot?.lost_products || 0) + countNum;
+      if (editLost) {
+        await db.lost_products.update(editLost.id, data);
+      } else {
+        newId = await db.lost_products.create(data);
+      }
+
+      // Partiyadagi umumiy yo'qotishlarni qayta hisoblash
+      // Bu yerda barcha yo'qotilganlarni qayta yig'ib chiqish aniqroq bo'ladi
+      const allLost = await db.lost_products.list(where("lotId", "==", lotId));
+      const newLostTotal = allLost.reduce(
+        (sum, item) => sum + (item.count || 0),
+        0,
+      );
+
       await db.lots.update(lotId, {
         lost_products: newLostTotal,
       });
 
-      setLostForm({ count: "", date: new Date().toISOString().split("T")[0] });
       if (onSuccess) {
-        onSuccess({ id: newId, ...newLostData }, newLostTotal);
+        onSuccess({ id: newId, ...data }, newLostTotal);
       }
       onClose();
     } catch (e) {
@@ -76,8 +106,11 @@ const LostProductModal: React.FC<LostProductModalProps> = ({
     <CustomModal
       visible={visible}
       onClose={onClose}
-      contentContainerStyle={{ justifyContent: "flex-end" }}
-      modalTitle="Yo'qotilgan tovar qo'shish"
+      modalTitle={
+        editLost
+          ? "Yo'qotilgan tovarni tahrirlash"
+          : "Yo'qotilgan tovar qo'shish"
+      }
     >
       <View className="flex-row mb-3 items-center gap-2">
         <Text className="text-gray-600">Jami yo'qotishlar:</Text>

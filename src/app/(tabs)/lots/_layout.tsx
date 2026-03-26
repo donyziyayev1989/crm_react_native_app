@@ -20,23 +20,12 @@ const Layout = () => {
         name="[lotId]"
         options={{
           title: "Partiya tafsiloti",
-          headerRight: () => (
-            <Link href="/" className="text-danger p-3">
-              <MaterialIcons name="remove-circle-outline" size={24} />
-            </Link>
-          ),
         }}
       />
       <Stack.Screen name="addLot" options={{ title: "Yangi partiya" }} />
       <Stack.Screen
         name="edit/[lotId]"
         options={{ title: "Partiyani tahrirlash" }}
-      />
-      <Stack.Screen
-        name="dashboard/[lotId]"
-        options={{
-          title: "Partiya Dashboard",
-        }}
       />
     </Stack>
   );

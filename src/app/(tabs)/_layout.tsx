@@ -87,7 +87,7 @@ export default function TabLayout() {
         <Tabs.Screen
           name="messages/index"
           options={{
-            title: "Habarlar",
+            title: "Xabarlar",
             tabBarIcon: ({ color, size }) => (
               <MaterialIcons name="message" size={size} color={color} />
             ),

@@ -57,15 +57,30 @@ export const RouteService = {
   },
 
   /**
-   * Generates a Google Maps navigation link for a sequence of points
+   * Generates a Google Maps navigation link for a sequence of points.
+   * Uses the api=1 format which reliably shows route markers in Google Maps.
+   * stopNames is accepted but only used in the share message body (not the URL),
+   * because Google Maps labels stops automatically as A, B, C...
    */
-  getNavigationLink: (points: { latitude: number; longitude: number }[]) => {
+  getNavigationLink: (
+    points: { latitude: number; longitude: number }[],
+    _stopNames?: string[],
+  ) => {
     if (points.length < 2) return "";
-    
+
     const origin = `${points[0].latitude},${points[0].longitude}`;
     const destination = `${points[points.length - 1].latitude},${points[points.length - 1].longitude}`;
-    const waypoints = points.slice(1, -1).map(p => `${p.latitude},${p.longitude}`).join('|');
-    
-    return `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}${waypoints ? `&waypoints=${waypoints}` : ''}&travelmode=driving`;
-  }
+    const waypoints = points
+      .slice(1, -1)
+      .map((p) => `${p.latitude},${p.longitude}`)
+      .join("|");
+
+    return (
+      `https://www.google.com/maps/dir/?api=1` +
+      `&origin=${origin}` +
+      `&destination=${destination}` +
+      (waypoints ? `&waypoints=${waypoints}` : "") +
+      `&travelmode=driving`
+    );
+  },
 };

@@ -2,12 +2,14 @@ import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Link, Stack } from "expo-router";
 import React from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+
 export default function Index() {
   return (
     <ScrollView style={styles.container}>
       <Stack.Screen
         options={{
           title: "Bosh sahifa",
+          headerTitleAlign: "center",
           headerRight: () => (
             <Link href="/profile" asChild>
               <Pressable className="p-3">
@@ -30,26 +32,26 @@ export default function Index() {
         </Link>
         <Link href="/products" asChild>
           <Pressable style={styles.card}>
-            <MaterialIcons name="inventory" size={32} color="#3b82f6" />
+            <MaterialIcons name="shopping-bag" size={32} color="#6366f1" />
             <Text style={styles.cardText}>Mahsulotlar</Text>
+          </Pressable>
+        </Link>
+        <Link href="/customers" asChild>
+          <Pressable style={styles.card}>
+            <MaterialIcons name="people" size={32} color="#10b981" />
+            <Text style={styles.cardText}>Mijozlar</Text>
           </Pressable>
         </Link>
         <Link href="/faqt" asChild>
           <Pressable style={styles.card}>
-            <MaterialIcons name="help-outline" size={32} color="#10b981" />
+            <MaterialIcons name="help-outline" size={32} color="#6b7280" />
             <Text style={styles.cardText}>FAQ</Text>
           </Pressable>
         </Link>
         <Link href="/about-us" asChild>
           <Pressable style={styles.card}>
-            <MaterialIcons name="info-outline" size={32} color="#3b82f6" />
+            <MaterialIcons name="info-outline" size={32} color="#6b7280" />
             <Text style={styles.cardText}>Biz haqimizda</Text>
-          </Pressable>
-        </Link>
-        <Link href="/customers" asChild>
-          <Pressable style={styles.card}>
-            <MaterialIcons name="people" size={32} color="#3b82f6" />
-            <Text style={styles.cardText}>Mijozlar</Text>
           </Pressable>
         </Link>
       </View>
@@ -62,20 +64,32 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#f9fafb",
   },
-  header: {
-    padding: 24,
-    paddingTop: 60,
+  statsContainer: {
+    flexDirection: "row",
+    padding: 16,
+    gap: 12,
+  },
+  statCard: {
+    flex: 1,
     backgroundColor: "#fff",
+    padding: 16,
+    borderRadius: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
   },
-  welcome: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: "#111827",
-  },
-  subtitle: {
-    fontSize: 16,
+  statLabel: {
+    fontSize: 12,
     color: "#6b7280",
-    marginTop: 4,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    marginBottom: 4,
+  },
+  statValue: {
+    fontSize: 18,
+    fontWeight: "800",
   },
   grid: {
     padding: 16,

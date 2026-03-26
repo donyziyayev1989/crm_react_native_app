@@ -356,7 +356,6 @@ const OrderModal: React.FC<OrderModalProps> = ({
       <CustomModal
         visible={visible}
         onClose={handleClose}
-        contentContainerStyle={{ justifyContent: "flex-end" }}
         modalTitle={editLine ? "Buyurtmani tahrirlash" : "Yangi buyurtma"}
       >
         <ScrollView
@@ -410,8 +409,7 @@ const OrderModal: React.FC<OrderModalProps> = ({
                 value={selectedRegionId}
                 isInModal={true}
                 onChange={async (v: string) => {
-                  const regName =
-                    regions.find((r) => r.id === v)?.name || v;
+                  const regName = regions.find((r) => r.id === v)?.name || v;
                   setSelectedRegionId(v);
                   setForm((f: typeof emptyForm) => ({
                     ...f,

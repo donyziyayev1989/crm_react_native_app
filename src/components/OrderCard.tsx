@@ -62,10 +62,20 @@ const OrderCard: React.FC<OrderCardProps> = ({
       </View>
 
       {/* Product Name */}
-      <View className="flex-row items-center justify-between mb-1">
+      <View className="flex-row items-center mb-1">
         <View style={styles.infoItem}>
           <MaterialIcons name="shopping-bag" size={16} color="#6b7280" />
           <Text style={styles.infoText}>{productName}</Text>
+        </View>
+      </View>
+
+      <View className="flex-row items-center justify-between mb-1">
+        <View style={styles.infoItem}>
+          <MaterialIcons name="place" size={16} color="#6b7280" />
+          <Text style={styles.infoText}>
+            {item.district_name && `${item.district_name} tumani, `}
+            {item.region_name && `${item.region_name} viloyati`}
+          </Text>
         </View>
       </View>
 
@@ -85,9 +95,9 @@ const OrderCard: React.FC<OrderCardProps> = ({
         </View>
         <View className="flex-row items-center">
           <Text className="text-black"> x {item.product_count}</Text>
-          <Text className="text-muted"> dona = </Text>
+          <Text className="text-muted"> dona </Text>
           <Text className="font-semibold">
-            {formatMoney(item.product_price * item.product_count)} so'm
+            = {formatMoney(item.product_price * item.product_count)} so'm
           </Text>
         </View>
       </View>
@@ -105,9 +115,9 @@ const OrderCard: React.FC<OrderCardProps> = ({
         </Text>
         <Text className="text-muted"> so'm</Text>
         <Text className="text-black"> x {item.product_count}</Text>
-        <Text className="text-muted"> dona = </Text>
+        <Text className="text-muted"> dona </Text>
         <Text className="font-semibold">
-          {formatMoney(item.delivery_price * item.product_count)} so'm
+          = {formatMoney(item.delivery_price * item.product_count)} so'm
         </Text>
       </View>
 

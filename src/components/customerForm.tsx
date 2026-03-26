@@ -2,13 +2,12 @@ import Input from "@/components/Input";
 import PhoneInput from "@/components/PhoneInput";
 import Select from "@/components/Select";
 import { auth } from "@/firebase/firebase";
-import db, { database, where } from "@/services/database";
+import db, { where } from "@/services/database";
 import { formatPhone } from "@/utils/format";
 import { Customer, District, ProductLot, Region } from "@interfaces/index";
 import { useRouter } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
-import { Rating } from "react-native-ratings";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -19,6 +18,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { Rating } from "react-native-ratings";
 
 interface CustomerFormProps {
   onSuccess?: (customerId: string, customerData: Customer) => void;
@@ -39,7 +39,9 @@ const CustomerForm = ({
   const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
 
   // ─── Data States ──────────────────────────────────────────────────────────
-  const [regionsData, setRegionsData] = useState<(Region & { id: string })[]>([]);
+  const [regionsData, setRegionsData] = useState<(Region & { id: string })[]>(
+    [],
+  );
   const [districtsData, setDistrictsData] = useState<District[]>([]);
   const [lotsData, setLotsData] = useState<(ProductLot & { id: string })[]>([]);
   const [tagsData, setTagsData] = useState<{ name: string; id: string }[]>([]);
@@ -65,7 +67,7 @@ const CustomerForm = ({
     if (selectedRegionId) {
       const unsubDistricts = db.districts.watch(
         setDistrictsData as any,
-        where("regionId", "==", selectedRegionId)
+        where("regionId", "==", selectedRegionId),
       );
       return unsubDistricts;
     } else {
@@ -81,8 +83,7 @@ const CustomerForm = ({
       const normalizedValue = normalize(val);
 
       let found = regionsData.find(
-        (d) =>
-          d.id === val || normalize(d.name || "") === normalizedValue,
+        (d) => d.id === val || normalize(d.name || "") === normalizedValue,
       );
 
       // Qo'shimcha fuzzy matching (ayniqsa Toshkent uchun)
@@ -203,7 +204,6 @@ const CustomerForm = ({
         }
       }
     } catch (error) {
-      console.error(error);
       Alert.alert("Xatolik", "Saqlashda xatolik yuz berdi");
     }
   };
@@ -285,8 +285,7 @@ const CustomerForm = ({
               const normalizedValue = normalize(value || "");
               let foundDoc = (regionsData ?? []).find(
                 (d) =>
-                  d.id === value ||
-                  normalize(d.name || "") === normalizedValue,
+                  d.id === value || normalize(d.name || "") === normalizedValue,
               );
 
               // Toshkent uchun fuzzy match

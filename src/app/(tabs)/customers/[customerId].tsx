@@ -95,7 +95,6 @@ const CustomerDetail = () => {
     };
   }, [customerId]);
 
-  console.log(customer);
   if (loading) {
     return (
       <View style={styles.center}>
@@ -154,7 +153,6 @@ const CustomerDetail = () => {
             <View style={styles.row}>
               <Text style={styles.label}>Telegram:</Text>
               <View className="flex-1 flex-row items-center justify-between">
-                <Text style={styles.value}>{customer.telegram_id}</Text>
                 <Pressable
                   onPress={() =>
                     openTelegram(customer.telegram_id, undefined, {
@@ -162,9 +160,9 @@ const CustomerDetail = () => {
                       title: customer.name,
                     })
                   }
-                  className="bg-blue-500 p-1.5 rounded-full"
+                  className="rounded-full"
                 >
-                  <MaterialIcons name="telegram" size={20} color="white" />
+                  <MaterialIcons name="telegram" size={20} color="#0088cc" />
                 </Pressable>
               </View>
             </View>

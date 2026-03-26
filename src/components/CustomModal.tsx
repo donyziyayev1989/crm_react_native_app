@@ -127,7 +127,7 @@ const CustomModal: React.FC<CustomModalProps> = ({
     >
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={[{ flex: 1 }, contentContainerStyle]}
+        style={[{ flex: 1, justifyContent: "flex-end" }, contentContainerStyle]}
       >
         {showBackdrop && (
           <Animated.View

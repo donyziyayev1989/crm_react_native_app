@@ -6,9 +6,7 @@ import React, { useMemo, useState } from "react";
 import { Pressable, SectionList, StyleSheet, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
-import Select from "./Select";
-
-type GroupBy = "none" | "region" | "product" | "lot";
+import GroupPicker, { GroupBy } from "./GroupPicker";
 
 interface OrderListProps {
   orders: (Order & { id: string })[];
@@ -51,7 +49,7 @@ const OrderList: React.FC<OrderListProps> = ({
   ListEmptyComponent,
   ListFooterComponent,
 }) => {
-  const [groupBy, setGroupBy] = useState<GroupBy>("none");
+  const [groupBy, setGroupBy] = useState<GroupBy>(null);
 
   // --- Maps for quick access ---
   const customersMap = useMemo(() => {
@@ -80,10 +78,6 @@ const OrderList: React.FC<OrderListProps> = ({
 
   // --- Grouping Logic ---
   const sections = useMemo(() => {
-    if (groupBy === "none") {
-      return [{ title: "", data: orders }];
-    }
-
     const groups: Record<string, (Order & { id: string })[]> = {};
 
     orders.forEach((order) => {
@@ -150,35 +144,25 @@ const OrderList: React.FC<OrderListProps> = ({
     );
   };
 
-  const groupByOptions = useMemo(
-    () => [
-      { label: "Yo'q", value: "none" },
-      { label: "Viloyat", value: "region" },
-      { label: "Mahsulot", value: "product" },
-      { label: "Partiya", value: "lot" },
-    ],
-    [],
-  );
-
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <View style={styles.groupPicker}>
-        <View style={{ flex: 1 }}>
-          <Select
-            data={groupByOptions}
-            placeholder="Guruhlash..."
-            searchPlaceholder="Qidirish..."
-            value={groupBy}
-            onChange={(v) => setGroupBy(v as GroupBy)}
-          />
-        </View>
-      </View>
-
       <SectionList
         sections={sections}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
-        ListHeaderComponent={ListHeaderComponent}
+        ListHeaderComponent={
+          <View className="flex-row items-center gap-2 mb-3">
+            <View className="flex-1">
+              <GroupPicker value={groupBy} onChange={setGroupBy} />
+            </View>
+            {ListHeaderComponent &&
+              (React.isValidElement(ListHeaderComponent) ? (
+                ListHeaderComponent
+              ) : (
+                <ListHeaderComponent />
+              ))}
+          </View>
+        }
         ListEmptyComponent={ListEmptyComponent}
         ListFooterComponent={ListFooterComponent}
         stickySectionHeadersEnabled={true}
@@ -271,15 +255,6 @@ const OrderList: React.FC<OrderListProps> = ({
 export default OrderList;
 
 const styles = StyleSheet.create({
-  groupPicker: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: "#fff",
-    borderBottomWidth: 1,
-    borderBottomColor: "#f3f4f6",
-  },
   groupLabel: {
     fontSize: 13,
     fontWeight: "600",

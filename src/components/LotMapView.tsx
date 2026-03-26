@@ -14,10 +14,18 @@ import Mapbox, {
 } from "@rnmapbox/maps";
 import { callPhone } from "@utils/actions";
 import { formatPhone } from "@utils/format";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   Alert,
+  Linking,
+  ScrollView,
   Share,
   StyleSheet,
   Text,
@@ -35,7 +43,9 @@ interface LotMapViewProps {
   customers: (Customer & { id: string })[];
   products: (Product & { id: string })[];
   users: (User & { id: string })[];
+  lots?: any[];
   onOrderPress: (orderId: string) => void;
+  onUpdate?: () => void;
   onLocationUpdate?: (
     id: string,
     lat: number,
@@ -49,6 +59,7 @@ const LotMapView: React.FC<LotMapViewProps> = ({
   customers,
   products,
   onOrderPress,
+  onUpdate,
 }) => {
   const [loading, setLoading] = useState(true);
   const [locations, setLocations] = useState<Map<string, Coordinate>>(
@@ -61,12 +72,64 @@ const LotMapView: React.FC<LotMapViewProps> = ({
   const [modalVisible, setModalVisible] = useState(false);
   const [userCoord, setUserCoord] = useState<Coordinate | null>(null);
   const [orderedOrderIds, setOrderedOrderIds] = useState<string[]>([]);
+  const [driverMode, setDriverMode] = useState(false);
+  const [updatedStatuses, setUpdatedStatuses] = useState<
+    Record<string, string>
+  >({});
+  const [isEditingStatus, setIsEditingStatus] = useState(false);
+  const [isDragMode, setIsDragMode] = useState(false);
+  const [showToolbar, setShowToolbar] = useState(false);
+  const cameraRef = useRef<Camera>(null);
+
+  // Nearest-neighbor fallback (when Mapbox API fails)
+  const nearestNeighborOrder = useCallback(
+    (locs: Map<string, Coordinate>, start: Coordinate): string[] => {
+      const unvisited = Array.from(locs.entries());
+      const ordered: string[] = [];
+      let current = start;
+
+      while (unvisited.length > 0) {
+        let minDist = Infinity;
+        let minIdx = 0;
+        unvisited.forEach(([, coord], idx) => {
+          // Simple Euclidean distance (good enough for ordering)
+          const dLat = coord.latitude - current.latitude;
+          const dLng = coord.longitude - current.longitude;
+          const dist = dLat * dLat + dLng * dLng;
+          if (dist < minDist) {
+            minDist = dist;
+            minIdx = idx;
+          }
+        });
+        const [id, coord] = unvisited.splice(minIdx, 1)[0];
+        ordered.push(id);
+        current = coord;
+      }
+      return ordered;
+    },
+    [],
+  );
+
   // Preparation logic extracted for reuse
   const calculateRoute = useCallback(
     async (
       currentLocations: Map<string, Coordinate>,
       startCoord?: Coordinate,
     ) => {
+      const activeLocations = new Map<string, Coordinate>();
+      for (const [id, coord] of currentLocations.entries()) {
+        const order = orders.find((o) => o.id === id);
+        if (order && order.state !== "done" && order.state !== "cancel") {
+          activeLocations.set(id, coord);
+        }
+      }
+
+      if (activeLocations.size === 0) {
+        setOrderedOrderIds([]);
+        setRouteData(null);
+        return;
+      }
+
       const coordList: Coordinate[] = [];
       const orderIds: string[] = [];
 
@@ -75,24 +138,39 @@ const LotMapView: React.FC<LotMapViewProps> = ({
         coordList.push(startCoord);
       }
 
-      // Add all order locations
-      for (const [id, coord] of currentLocations.entries()) {
+      // Add all active order locations
+      for (const [id, coord] of activeLocations.entries()) {
         coordList.push(coord);
         orderIds.push(id);
       }
 
-      if (coordList.length >= 2) {
-        const route = await MapboxService.getOptimizedRoute(coordList);
-        if (route) {
-          setRouteData(route);
-          // Mapbox optimization returns waypoints in visiting order
-          if (route.waypoints && route.waypoints.length > 0) {
+      // Use userCoord if available, otherwise just use the first order as the starting point.
+      const hasRealStart = !!startCoord;
+      const originCoord =
+        startCoord || (coordList.length > 0 ? coordList[0] : undefined);
+
+      let finalOrderedIds: string[] = [];
+      let optimized = false;
+
+      // Mapbox Optimization API is the most optimal (traffic-aware TSP solver)
+      if (coordList.length <= 12) {
+        // Try Mapbox Optimization API (perfect TSP, max 12 coordinates)
+        try {
+          const route = await MapboxService.getOptimizedRoute(coordList);
+          if (route && route.waypoints && route.waypoints.length > 0) {
+            setRouteData(route);
             const optimizedIds: string[] = [];
 
-            // Mapbox optimization response waypoints are ordered by trip sequence
-            route.waypoints.forEach((wp: any) => {
+            // Sorted by visit order
+            const sorted = [...route.waypoints].sort(
+              (a: any, b: any) =>
+                a.trips_index - b.trips_index ||
+                a.waypoint_index - b.waypoint_index,
+            );
+
+            sorted.forEach((wp: any) => {
               const inputIndex = wp.waypoint_index;
-              if (startCoord) {
+              if (hasRealStart) {
                 if (inputIndex > 0) {
                   optimizedIds.push(orderIds[inputIndex - 1]);
                 }
@@ -101,20 +179,61 @@ const LotMapView: React.FC<LotMapViewProps> = ({
               }
             });
 
-            setOrderedOrderIds(optimizedIds);
+            if (optimizedIds.filter(Boolean).length === orderIds.length) {
+              finalOrderedIds = optimizedIds.filter(Boolean);
+              optimized = true;
+            }
           }
+        } catch {
+          // fall through to fallback
+        }
+      }
+
+      if (!optimized) {
+        // ── Fallback: Local Haversine nearest-neighbor ──
+        if (originCoord) {
+          finalOrderedIds = nearestNeighborOrder(currentLocations, originCoord);
+        } else {
+          finalOrderedIds = orderIds;
+        }
+      }
+
+      setOrderedOrderIds(finalOrderedIds);
+
+      // Fetch the actual polyline for the greedy route
+      const finalCoords = startCoord ? [startCoord] : [];
+      finalOrderedIds.forEach((id) => {
+        const c = currentLocations.get(id);
+        if (c) finalCoords.push(c);
+      });
+
+      // Fetch the actual polyline for the greedy route if we fell back to local math
+      if (!optimized && finalCoords.length >= 2 && finalCoords.length <= 25) {
+        try {
+          const route = await MapboxService.getDirections(finalCoords);
+          if (route) {
+            setRouteData(route);
+          }
+        } catch (e) {
+          console.error("Directions route fetch failed", e);
         }
       }
     },
-    [],
+    [nearestNeighborOrder, orders, customers, setOrderedOrderIds, setRouteData],
   );
 
-  // Recalculate route when locations or user coordinates change
+  // Recalculate route when locations or user coordinates change (only if NOT actively navigating)
+  // This creates a stable "navigator" experience: once started, the sequence is locked until you complete an order.
   useEffect(() => {
     if (locations.size > 0) {
       calculateRoute(locations, userCoord || undefined);
     }
   }, [locations, userCoord, calculateRoute]);
+
+  // Request location permissions (especially critical for Android Emulators)
+  useEffect(() => {
+    Mapbox.requestAndroidLocationPermissions();
+  }, []);
 
   // Prepare order data with locations
   useEffect(() => {
@@ -185,33 +304,89 @@ const LotMapView: React.FC<LotMapViewProps> = ({
   }, []);
 
   const handleShareRoute = useCallback(async () => {
-    if (orderedOrderIds.length === 0) {
-      Alert.alert("Xato", "Hali marshrut shakllanmagan. Iltimos biroz kuting.");
+    // 1. Mandatory driver location for precise sorting
+    if (!userCoord) {
+      Alert.alert(
+        "Joylashuv topilmadi",
+        "Marshrutni ulashish uchun joriy joylashuvingizni (GPS) yoqing.",
+      );
       return;
     }
 
-    const startPoint = userCoord || locations.get(orderedOrderIds[0]);
-    if (!startPoint) {
-      Alert.alert("Xato", "Boshlang'ich nuqtani aniqlab bo'lmadi.");
+    // 2. Re-calculate the nearest-neighbor sequence from CURRENT locations
+    // to ensure the shared route is perfectly ordered from where the driver is standing.
+    const activeLocations = new Map<string, Coordinate>();
+    for (const [id, coord] of locations.entries()) {
+      const order = orders.find((o) => o.id === id);
+      // Skip done/cancel orders
+      if (order && order.state !== "done" && order.state !== "cancel") {
+        activeLocations.set(id, coord);
+      }
+    }
+
+    if (activeLocations.size === 0) {
+      Alert.alert("Eslatma", "Ulashish uchun faol buyurtmalar mavjud emas.");
       return;
     }
 
-    const points = [startPoint];
-    orderedOrderIds.forEach((id) => {
-      const coord = locations.get(id);
-      if (coord && coord !== startPoint) points.push(coord);
+    const freshOrderedIds = nearestNeighborOrder(activeLocations, userCoord);
+
+    // 3. Build ordered points list (start with driver) & stop metadata
+    const points: Coordinate[] = [userCoord];
+    const stopNames: string[] = [];
+
+    freshOrderedIds.forEach((id, idx) => {
+      const coord = activeLocations.get(id);
+      if (!coord) return;
+      points.push(coord);
+
+      const order = orders.find((o) => o.id === id);
+      const customer = customers.find((c) => c.id === order?.customer_id);
+      const name = customer?.name || "Noma'lum";
+      const count = order?.product_count ?? 0;
+      const district = order?.district_name || customer?.district_name || "";
+
+      stopNames.push(
+        `${idx + 1}. ${name} — ${count} ta${district ? ` (${district})` : ""}`,
+      );
     });
 
-    const url = RouteService.getNavigationLink(points);
+    // 4. Generate the shared link (Google Maps)
+    const url = RouteService.getNavigationLink(points, stopNames);
+
+    // 5. Compose the share message
+    const shareText =
+      `🗺 Marshrut (${freshOrderedIds.length} ta to'xtash):\n\n` +
+      `🕒 Haydovchi joylashuvidan boshlab:\n` +
+      stopNames.join("\n") +
+      `\n\n📍 Google Maps:\n${url}`;
+
     try {
-      await Share.share({
-        message: `Optimallashgan yo'nalish (Barcha buyurtmalar): ${url}`,
-        url: url,
-      });
+      await Share.share({ message: shareText, url });
     } catch (error) {
       Alert.alert("Xato", "Ulashishda xatolik yuz berdi");
     }
-  }, [orderedOrderIds, userCoord, locations]);
+  }, [userCoord, locations, orders, customers, nearestNeighborOrder]);
+
+  /** Open Google Maps navigation for a single order stop */
+  const handleNavigateToOrder = useCallback(
+    (orderId: string) => {
+      const dest = locations.get(orderId);
+      if (!dest) {
+        Alert.alert("Xato", "Bu buyurtma uchun manzil topilmadi.");
+        return;
+      }
+      const origin = userCoord
+        ? `${userCoord.latitude},${userCoord.longitude}`
+        : "";
+      const destStr = `${dest.latitude},${dest.longitude}`;
+      const url = `https://www.google.com/maps/dir/?api=1${origin ? `&origin=${origin}` : ""}&destination=${destStr}&travelmode=driving`;
+      Linking.openURL(url).catch(() =>
+        Alert.alert("Xato", "Google Maps ochilmadi"),
+      );
+    },
+    [locations, userCoord],
+  );
 
   const onUserLocationUpdate = useCallback(
     (location: any) => {
@@ -247,8 +422,21 @@ const LotMapView: React.FC<LotMapViewProps> = ({
           text: "Ha",
           onPress: async () => {
             try {
-              await db.orders.update(selectedOrder.id, { state: status });
-              setModalVisible(false);
+              if (selectedOrder) {
+                // Optimistic local update
+                setUpdatedStatuses((prev) => ({
+                  ...prev,
+                  [selectedOrder.id]: status,
+                }));
+                setSelectedOrder((prev) =>
+                  prev ? { ...prev, state: status } : null,
+                );
+
+                await db.orders.update(selectedOrder.id, { state: status });
+                if (onUpdate) onUpdate();
+              }
+              // Keep modal open for a brief moment to show updated status before closing
+              setTimeout(() => setModalVisible(false), 800);
             } catch (error) {
               Alert.alert("Xato", "Holatni yangilashda xatolik yuz berdi");
             }
@@ -257,6 +445,7 @@ const LotMapView: React.FC<LotMapViewProps> = ({
       ],
     );
   };
+
   const selectedCustomer = useMemo(() => {
     if (!selectedOrder) return null;
     return customers.find((c) => c.id === selectedOrder.customer_id);
@@ -290,47 +479,79 @@ const LotMapView: React.FC<LotMapViewProps> = ({
     () =>
       Array.from(locations.entries()).map(([orderId, coord]) => {
         const order = orders.find((o) => o.id === orderId);
-        // Find the sequence number from optimized route
-        const sequenceIndex = orderedOrderIds.indexOf(orderId);
-        const sequenceLabel =
-          sequenceIndex !== -1 ? (sequenceIndex + 1).toString() : "";
+        const currentStatus = updatedStatuses[orderId] || order?.state;
+
+        let markerColor = "#ef4444"; // Default red
+        if (currentStatus === "done") markerColor = "#10b981"; // Finished: green
+        if (currentStatus === "cancel") markerColor = "#9ca3af"; // Canceled: gray
+
+        const forceUpdateKey = `${orderId}-${currentStatus}-${isDragMode}`;
 
         return (
           <PointAnnotation
-            key={orderId}
-            id={orderId}
+            key={forceUpdateKey}
+            id={forceUpdateKey}
             coordinate={[coord.longitude, coord.latitude]}
             onDragEnd={(e) => handleDragEnd(orderId, e)}
             onSelected={() => {
               setSelectedOrder(order || null);
+              setIsEditingStatus(false);
               setModalVisible(true);
             }}
-            draggable={true}
+            draggable={isDragMode}
           >
-            <View style={styles.markerWrapper} collapsable={false}>
-              <View style={styles.markerContainer}>
-                <View style={styles.markerMain}>
-                  <MaterialIcons
-                    name="person-pin-circle"
-                    size={42}
-                    color={sequenceLabel ? "#6366f1" : "#ef4444"}
-                  />
-                  {sequenceLabel && (
-                    <View style={styles.sequenceBadge}>
-                      <Text style={styles.sequenceText}>{sequenceLabel}</Text>
-                    </View>
-                  )}
-                </View>
-                <View style={styles.countBadge}>
-                  <Text style={styles.countText}>{order?.product_count}</Text>
-                </View>
-              </View>
+            <View collapsable={false} style={{ zIndex: 10000 }}>
+              <Text
+                style={{
+                  backgroundColor: markerColor,
+                  zIndex: 100,
+                  padding: 4,
+                  borderRadius: 10,
+                  color: "white",
+                  fontSize: 12,
+                  lineHeight: 16,
+                  textAlign: "center",
+                  fontWeight: "bold",
+                }}
+              >
+                {order?.product_count ?? 0} ta
+              </Text>
+              <MaterialIcons name="place" size={36} color={markerColor} />
             </View>
           </PointAnnotation>
         );
       }),
-    [locations, orderedOrderIds, orders, handleDragEnd],
+    [
+      locations,
+      orderedOrderIds,
+      orders,
+      handleDragEnd,
+      updatedStatuses,
+      isDragMode,
+    ],
   );
+
+  /** Driver mode: ordered stops list */
+   const driverStops = useMemo(() => {
+    return orderedOrderIds
+      .map((id, idx) => {
+        const order = orders.find((o) => o.id === id);
+        // Only include active stops in the panel
+        if (!order || order.state === "done" || order.state === "cancel")
+          return null;
+        const customer = customers.find((c) => c.id === order.customer_id);
+        return { id, order, customer, idx };
+      })
+      .filter((stop): stop is any => stop !== null);
+  }, [orderedOrderIds, orders, customers]);
+
+  const focusOnStop = useCallback((coord: Coordinate) => {
+    cameraRef.current?.setCamera({
+      centerCoordinate: [coord.longitude, coord.latitude],
+      zoomLevel: 14,
+      animationDuration: 600,
+    });
+  }, []);
 
   if (loading && locations.size === 0) {
     return (
@@ -344,8 +565,8 @@ const LotMapView: React.FC<LotMapViewProps> = ({
   return (
     <SafeAreaView style={styles.container}>
       <MapView style={styles.map} styleURL={Mapbox.StyleURL.Street}>
-        <UserLocation animated={true} onUpdate={onUserLocationUpdate} />
         <Camera
+          ref={cameraRef}
           defaultSettings={{
             zoomLevel: 10,
             centerCoordinate: userCoord
@@ -357,26 +578,197 @@ const LotMapView: React.FC<LotMapViewProps> = ({
                   ]
                 : [69.2401, 41.2995],
           }}
-          followUserLocation={false}
         />
 
-        {/* Route Line */}
+        {/* Route Line at the bottom of style layers */}
         {routeLayer}
 
-        {/* Order Markers */}
+        {/* Show user's current location */}
+        <UserLocation
+          animated={true}
+          onUpdate={onUserLocationUpdate}
+          visible={true}
+          showsUserHeadingIndicator={true}
+        />
+
+        {/* ── Driver Location Marker ── */}
+        {userCoord && (
+          <PointAnnotation
+            id="driver_location"
+            key="driver_location"
+            coordinate={[userCoord.longitude, userCoord.latitude]}
+          >
+            <View style={styles.driverPin} collapsable={false}>
+              <View style={styles.driverPinInner}>
+                <MaterialIcons name="directions-car" size={18} color="#fff" />
+              </View>
+              <View style={styles.driverPinTail} />
+              <View style={styles.driverPinLabel}>
+                <Text style={styles.driverPinLabelText}>Siz</Text>
+              </View>
+            </View>
+          </PointAnnotation>
+        )}
+
+        {/* Order Markers on top */}
         {markers}
       </MapView>
 
-      {/* Share Button Overlay */}
+      {/* ── Toolbar ── */}
+      {showToolbar && (
+        <View style={styles.toolbar}>
+          {/* Driver Mode Toggle */}
+          <TouchableOpacity
+            style={[styles.toolBtn, driverMode && styles.toolBtnActive]}
+            onPress={() => {
+              setDriverMode(true);
+              setShowToolbar(false);
+            }}
+            activeOpacity={0.8}
+          >
+            <MaterialIcons
+              name="directions-car"
+              size={20}
+              color={driverMode ? "#fff" : "#6366f1"}
+            />
+            <Text
+              style={[
+                styles.toolBtnText,
+                driverMode && styles.toolBtnTextActive,
+              ]}
+            >
+              Haydovchi
+            </Text>
+          </TouchableOpacity>
+
+          {/* Drag Mode Toggle */}
+          <TouchableOpacity
+            style={[styles.toolBtn, isDragMode && styles.toolBtnActive]}
+            onPress={() => setIsDragMode((v) => !v)}
+            activeOpacity={0.8}
+          >
+            <MaterialIcons
+              name="edit-location"
+              size={20}
+              color={isDragMode ? "#fff" : "#6366f1"}
+            />
+            <Text
+              style={[
+                styles.toolBtnText,
+                isDragMode && styles.toolBtnTextActive,
+              ]}
+            >
+              Surish
+            </Text>
+          </TouchableOpacity>
+
+          {/* Center on user */}
+          {userCoord && (
+            <TouchableOpacity
+              style={styles.toolBtn}
+              onPress={() => focusOnStop(userCoord)}
+              activeOpacity={0.8}
+            >
+              <MaterialIcons name="my-location" size={20} color="#6366f1" />
+              <Text style={styles.toolBtnText}>Joylashuv</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* ── Share Route Button ── */}
+          <TouchableOpacity
+            style={styles.toolBtn}
+            onPress={() => {
+              setShowToolbar(false);
+              handleShareRoute();
+            }}
+            activeOpacity={0.8}
+          >
+            <MaterialIcons name="share" size={20} color="#6366f1" />
+            <Text style={styles.toolBtnText}>Ulashish</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* ── Toolbar Toggle Button ── */}
       <TouchableOpacity
-        style={styles.shareBtn}
-        onPress={handleShareRoute}
+        style={[
+          styles.shareBtn,
+          {
+            backgroundColor: showToolbar ? "#ef4444" : "#6366f1",
+          },
+        ]}
+        onPress={() => setShowToolbar(!showToolbar)}
         activeOpacity={0.8}
       >
-        <MaterialIcons name="share" size={24} color="#fff" />
+        <MaterialIcons
+          name={showToolbar ? "close" : "apps"}
+          size={26}
+          color="#fff"
+        />
       </TouchableOpacity>
 
-      {/* Order Detail Modal */}
+      {/* ── Driver Mode Stops Panel (bottom sliding list) ── */}
+      {driverMode && (
+        <View style={styles.driverPanel}>
+          <View style={styles.driverPanelHeader}>
+            <MaterialIcons name="alt-route" size={18} color="#6366f1" />
+            <Text style={styles.driverPanelTitle}>
+              Marshrut: {driverStops.length} ta to'xtash
+            </Text>
+            <TouchableOpacity
+              style={{ marginLeft: "auto" }}
+              onPress={() => setDriverMode(false)}
+              activeOpacity={0.8}
+            >
+              <MaterialIcons name="close" size={20} color="#6366f1" />
+            </TouchableOpacity>
+          </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.driverStopsList}
+          >
+            {driverStops.map(({ id, order, customer, idx }) => {
+              const coord = locations.get(id);
+              return (
+                <TouchableOpacity
+                  key={id}
+                  style={styles.driverStop}
+                  onPress={() => {
+                    if (coord) focusOnStop(coord);
+                  }}
+                  activeOpacity={0.85}
+                >
+                  {/* Step number */}
+                  <View style={styles.stopBadge}>
+                    <Text style={styles.stopBadgeText}>{idx + 1}</Text>
+                  </View>
+
+                  <Text style={styles.stopCustomer} numberOfLines={1}>
+                    {customer?.name || "Noma'lum"}
+                  </Text>
+                  <Text style={styles.stopProduct} numberOfLines={1}>
+                    {order?.product_count} ta •{" "}
+                    {order?.district_name || order?.region_name || ""}
+                  </Text>
+
+                  {/* Navigate button */}
+                  <TouchableOpacity
+                    style={styles.stopNavBtn}
+                    onPress={() => handleNavigateToOrder(id)}
+                    activeOpacity={0.8}
+                  >
+                    <MaterialIcons name="navigation" size={14} color="#fff" />
+                    <Text style={styles.stopNavBtnText}>Yo'l</Text>
+                  </TouchableOpacity>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
+
+      {/* ── Order Detail Modal ── */}
       <CustomModal
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
@@ -452,7 +844,7 @@ const LotMapView: React.FC<LotMapViewProps> = ({
 
             <View style={styles.infoRow}>
               <MaterialIcons name="payments" size={20} color="#f59e0b" />
-              <Text style={styles.infoLabel}>Jami:</Text>
+              <Text style={styles.infoLabel}>Jami buyurtmalar:</Text>
               <Text style={[styles.infoValue, { color: "#ef4444" }]}>
                 {(
                   selectedOrder.product_count * selectedOrder.product_price +
@@ -469,6 +861,20 @@ const LotMapView: React.FC<LotMapViewProps> = ({
               </View>
             )}
 
+            {/* Navigate to this specific order */}
+            <TouchableOpacity
+              style={styles.navigateBtn}
+              onPress={() => {
+                setModalVisible(false);
+                handleNavigateToOrder(selectedOrder.id);
+              }}
+            >
+              <MaterialIcons name="navigation" size={18} color="#fff" />
+              <Text style={styles.navigateBtnText}>
+                Google Maps'da yo'l olish
+              </Text>
+            </TouchableOpacity>
+
             <TouchableOpacity
               style={styles.detailBtn}
               onPress={() => {
@@ -480,23 +886,85 @@ const LotMapView: React.FC<LotMapViewProps> = ({
               <MaterialIcons name="arrow-forward" size={18} color="#fff" />
             </TouchableOpacity>
 
-            <View style={styles.actionRow}>
-              <TouchableOpacity
-                style={[styles.actionBtn, { backgroundColor: "#10b981" }]}
-                onPress={() => handleUpdateStatus("done")}
-              >
-                <MaterialIcons name="check-circle" size={20} color="#fff" />
-                <Text style={styles.actionBtnText}>Bajarildi</Text>
-              </TouchableOpacity>
+            {(selectedOrder.state !== "done" &&
+              selectedOrder.state !== "cancel") ||
+            isEditingStatus ? (
+              <View style={styles.actionRow}>
+                <TouchableOpacity
+                  style={[styles.actionBtn, { backgroundColor: "#10b981" }]}
+                  onPress={() => handleUpdateStatus("done")}
+                >
+                  <MaterialIcons name="check-circle" size={20} color="#fff" />
+                  <Text style={styles.actionBtnText}>Bajarildi</Text>
+                </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.actionBtn, { backgroundColor: "#ef4444" }]}
-                onPress={() => handleUpdateStatus("cancel")}
+                <TouchableOpacity
+                  style={[styles.actionBtn, { backgroundColor: "#ef4444" }]}
+                  onPress={() => handleUpdateStatus("cancel")}
+                >
+                  <MaterialIcons name="cancel" size={20} color="#fff" />
+                  <Text style={styles.actionBtnText}>Bekor qilish</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View
+                style={{
+                  gap: 8,
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                }}
               >
-                <MaterialIcons name="cancel" size={20} color="#fff" />
-                <Text style={styles.actionBtnText}>Bekor qilish</Text>
-              </TouchableOpacity>
-            </View>
+                <View
+                  style={[
+                    styles.infoRow,
+                    {
+                      backgroundColor:
+                        selectedOrder.state === "done" ? "#f0fdf4" : "#fef2f2",
+                      padding: 14,
+                      borderRadius: 12,
+                      flex: 1,
+                      justifyContent: "center",
+                      borderWidth: 1,
+                      borderColor:
+                        selectedOrder.state === "done" ? "#bcf0da" : "#fecaca",
+                    },
+                  ]}
+                >
+                  <MaterialIcons
+                    name={
+                      selectedOrder.state === "done" ? "check-circle" : "cancel"
+                    }
+                    size={22}
+                    color={
+                      selectedOrder.state === "done" ? "#10b981" : "#ef4444"
+                    }
+                  />
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      fontWeight: "800",
+                      color:
+                        selectedOrder.state === "done" ? "#10b981" : "#ef4444",
+                      marginLeft: 8,
+                    }}
+                  >
+                    {selectedOrder.state === "done"
+                      ? "BUYURTMA TOPSHIRILGAN"
+                      : "BUYURTMA BEKOR QILINGAN"}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={{
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: 8,
+                  }}
+                  onPress={() => setIsEditingStatus(true)}
+                >
+                  <MaterialIcons name="edit" size={16} color="#666" />
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         )}
       </CustomModal>
@@ -514,50 +982,128 @@ const styles = StyleSheet.create({
     backgroundColor: "#f9fafb",
   },
   loadingText: { marginTop: 12, color: "#4b5563", fontSize: 16 },
-  markerWrapper: {
-    padding: 10,
-  },
-  markerContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-    width: 50,
-    height: 50,
-  },
-  markerMain: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  sequenceBadge: {
-    position: "absolute",
-    top: 5,
-    backgroundColor: "#fff",
-    borderRadius: 8,
-    paddingHorizontal: 4,
-    borderWidth: 1,
-    borderColor: "#6366f1",
-    minWidth: 16,
-    alignItems: "center",
-  },
-  sequenceText: {
-    color: "#6366f1",
-    fontSize: 10,
-    fontWeight: "bold",
-  },
-  countBadge: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    backgroundColor: "#ef4444",
-    borderRadius: 10,
-    width: 18,
-    height: 18,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1.5,
-    borderColor: "#fff",
-  },
-  countText: { color: "#fff", fontSize: 9, fontWeight: "bold" },
 
+  // ── Toolbar ─────────────────────────────────────────────────────────────────
+  toolbar: {
+    position: "absolute",
+    bottom: 110,
+    right: 10,
+    flexDirection: "column",
+    gap: 8,
+    width: 150,
+  },
+  toolBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    borderWidth: 1.5,
+    borderColor: "#e5e7eb",
+  },
+  toolBtnActive: {
+    backgroundColor: "#6366f1",
+    borderColor: "#6366f1",
+  },
+  toolBtnText: { fontSize: 13, fontWeight: "600", color: "#6366f1" },
+  toolBtnTextActive: { color: "#fff" },
+
+  // ── Share Button ─────────────────────────────────────────────────────────────
+  shareBtn: {
+    position: "absolute",
+    bottom: 40,
+    right: 10,
+    backgroundColor: "#10b981",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+    borderRadius: 16,
+    gap: 10,
+    elevation: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+  },
+  shareBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+
+  // ── Driver Panel ─────────────────────────────────────────────────────────────
+  driverPanel: {
+    position: "absolute",
+    bottom: 20,
+    left: 0,
+    right: 0,
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingTop: 14,
+    paddingBottom: 16,
+    elevation: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+  },
+  driverPanelHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  driverPanelTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  driverStopsList: {
+    paddingHorizontal: 16,
+    gap: 10,
+  },
+  driverStop: {
+    width: 140,
+    backgroundColor: "#f8f9ff",
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1.5,
+    borderColor: "#e0e7ff",
+    gap: 4,
+    alignItems: "flex-start",
+  },
+  stopBadge: {
+    backgroundColor: "#6366f1",
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 4,
+  },
+  stopBadgeText: { color: "#fff", fontSize: 12, fontWeight: "800" },
+  stopCustomer: { fontSize: 13, fontWeight: "700", color: "#111827" },
+  stopProduct: { fontSize: 11, color: "#6b7280" },
+  stopNavBtn: {
+    marginTop: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#6366f1",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    alignSelf: "stretch",
+    justifyContent: "center",
+  },
+  stopNavBtnText: { color: "#fff", fontSize: 12, fontWeight: "600" },
+
+  // ── Modal ────────────────────────────────────────────────────────────────────
   infoRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   infoLabel: { fontSize: 14, color: "#6b7280", width: 100 },
   infoValue: { fontSize: 15, fontWeight: "600", color: "#111827", flex: 1 },
@@ -574,6 +1120,16 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   noteText: { fontSize: 14, color: "#1f2937", fontStyle: "italic" },
+  navigateBtn: {
+    backgroundColor: "#0ea5e9",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 12,
+    borderRadius: 12,
+    gap: 8,
+  },
+  navigateBtnText: { color: "#fff", fontSize: 15, fontWeight: "600" },
   detailBtn: {
     backgroundColor: "#6366f1",
     flexDirection: "row",
@@ -582,32 +1138,10 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 12,
     gap: 8,
-    marginTop: 10,
+    marginTop: 2,
   },
   detailBtnText: { color: "#fff", fontSize: 15, fontWeight: "600" },
-  shareBtn: {
-    position: "absolute",
-    bottom: 10,
-    right: 10,
-    backgroundColor: "#10b981",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 16,
-    borderRadius: 16,
-    gap: 10,
-    elevation: 8,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
-  },
-  shareBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
-  actionRow: {
-    flexDirection: "row",
-    gap: 10,
-    marginTop: 5,
-  },
+  actionRow: { flexDirection: "row", gap: 10, marginTop: 5 },
   actionBtn: {
     flex: 1,
     flexDirection: "row",
@@ -617,30 +1151,49 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     gap: 8,
   },
-  actionBtnText: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  lotItem: {
-    flexDirection: "row",
+  actionBtnText: { color: "#fff", fontSize: 14, fontWeight: "600" },
+
+  // ── Driver Location Pin ───────────────────────────────────────────────────────
+  driverPin: {
     alignItems: "center",
-    justifyContent: "space-between",
-    padding: 16,
-    backgroundColor: "#f9fafb",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
   },
-  lotName: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#111827",
+  driverPinInner: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#10b981",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 3,
+    borderColor: "#fff",
+    elevation: 8,
+    shadowColor: "#10b981",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.5,
+    shadowRadius: 5,
   },
-  lotDate: {
-    fontSize: 13,
-    color: "#6b7280",
-    marginTop: 2,
+  driverPinTail: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 7,
+    borderRightWidth: 7,
+    borderTopWidth: 10,
+    borderLeftColor: "transparent",
+    borderRightColor: "transparent",
+    borderTopColor: "#10b981",
+    marginTop: -1,
+  },
+  driverPinLabel: {
+    marginTop: 3,
+    backgroundColor: "#10b981",
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  driverPinLabelText: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "800",
   },
 });
 

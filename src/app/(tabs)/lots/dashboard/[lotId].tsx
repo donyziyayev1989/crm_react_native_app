@@ -1,11 +1,12 @@
 import Card from "@/components/Card";
 import LostProductModal from "@/components/LostProductModal";
+import LotExpenseModal from "@/components/LotExpenseModal";
 import OrderModal from "@/components/OrderModal";
-import { LostProduct, Order, ProductLot } from "@/interfaces";
+import { LostProduct, LotExpense, Order, ProductLot } from "@/interfaces";
 import db, { orderBy, where } from "@/services/database";
 import { formatDate, formatMoney } from "@/utils/format";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { useLocalSearchParams } from "expo-router";
+import { Stack, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -27,22 +28,34 @@ const OrderDashboard = () => {
   const [lostProducts, setLostProducts] = useState<
     (LostProduct & { id: string })[]
   >([]);
+  const [expenses, setExpenses] = useState<(LotExpense & { id: string })[]>([]);
   const [loading, setLoading] = useState(true);
   const [addLostModal, setAddLostModal] = useState(false);
   const [addLineModal, setAddLineModal] = useState(false);
+  const [editOrder, setEditOrder] = useState<(Order & { id: string }) | null>(
+    null,
+  );
+  const [addExpenseModal, setAddExpenseModal] = useState(false);
 
   useEffect(() => {
     if (!lotId) return;
     setLoading(true);
 
-    const unsubLot = db.lots.watch((data) => {
-      const found = data.find((l) => l.id === lotId);
-      if (found) setLot(found as ProductLot & { id: string });
-    }, where("__name__", "==", lotId));
+    const unsubLot = db.lots.watch(
+      (data) => {
+        const found = data.find((l) => l.id === lotId);
+        if (found) setLot(found as ProductLot & { id: string });
+      },
+      where("__name__", "==", lotId),
+    );
 
-    const unsubOrders = db.orders.watch((data) => {
-      setOrders(data as (Order & { id: string })[]);
-    }, where("lotId", "==", lotId));
+    const unsubOrders = db.orders.watch(
+      (data) => {
+        setOrders(data as (Order & { id: string })[]);
+      },
+      where("lotId", "==", lotId),
+      orderBy("date", "asc"),
+    );
 
     const unsubLost = db.lost_products.watch(
       (data) => {
@@ -56,11 +69,22 @@ const OrderDashboard = () => {
       where("lotId", "==", lotId),
       orderBy("timestamp", "asc"),
     );
+    const unsubExpenses = db.lot_expenses.watch(
+      (data) => {
+        setExpenses(
+          (data as (LotExpense & { id: string })[]).sort(
+            (a, b) => b.timestamp - a.timestamp,
+          ),
+        );
+      },
+      where("lotId", "==", lotId),
+    );
 
     return () => {
       unsubLot();
       unsubOrders();
       unsubLost();
+      unsubExpenses();
     };
   }, [lotId]);
 
@@ -97,6 +121,11 @@ const OrderDashboard = () => {
     });
 
     const lostCount = lostProducts.reduce((sum, lp) => sum + lp.count, 0);
+    const totalExpenses = expenses.reduce(
+      (sum, ex) => sum + (ex.total_price || 0),
+      0,
+    );
+    const netProfit = doneSum - totalExpenses;
 
     return {
       totalCount,
@@ -106,8 +135,10 @@ const OrderDashboard = () => {
       cancelCount,
       cancelSum,
       lostCount,
+      totalExpenses,
+      netProfit,
     };
-  }, [orders, lostProducts]);
+  }, [orders, lostProducts, expenses]);
 
   if (loading) {
     return (
@@ -117,254 +148,368 @@ const OrderDashboard = () => {
     );
   }
 
-  const handleOrderSuccess = (
-    order: Order & { id: string },
-    isEdit: boolean,
-  ) => {
-    if (isEdit) {
-      setOrders((prev) => prev.map((l) => (l.id === order.id ? order : l)));
-    } else {
-      setOrders((prev) => [...prev, order]);
-    }
-  };
-
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View className="flex-row flex-wrap">
-        <View className="w-1/2 flex-row mb-3 px-1">
-          <Card className="w-full">
-            <Text className="font-semibold text-primary mb-1">Jami:</Text>
-            <Text className="font-bold text-md">
-              {formatMoney(stats.totalSum)}{" "}
-              <Text className="font-normal text-xs text-gray-500">so'm</Text>
-            </Text>
-            <Text className="text-xs text-gray-500 mb-1">
-              {stats.totalCount} dona
-            </Text>
-          </Card>
-        </View>
-        <View className="w-1/2 flex-row mb-3 px-1">
-          <Card className="w-full">
-            <Text className="font-semibold text-danger mb-1">Yo'qotilgan:</Text>
-            <Text className="font-bold text-md">
-              {stats.lostCount}{" "}
-              <Text className="font-normal text-xs text-gray-500">dona</Text>
-            </Text>
-          </Card>
-        </View>
-        <View className="w-1/2 flex-row mb-3 px-1">
-          <Card className="w-full">
-            <Text className="font-semibold text-success mb-1">
-              Yetkazilgan:
-            </Text>
-            <Text className="font-bold text-md">
-              {formatMoney(stats.doneSum)}{" "}
-              <Text className="font-normal text-xs text-gray-500">so'm</Text>
-            </Text>
-            <Text className="text-xs text-gray-500">
-              {stats.doneCount} dona
-            </Text>
-          </Card>
-        </View>
-        <View className="w-1/2 flex-row mb-3 px-1">
-          <Card className="w-full">
-            <Text className="font-semibold text-warning">Bekor qilingan:</Text>
-            <Text className="text-xs text-gray-500">
-              {stats.cancelCount} dona
-            </Text>
-          </Card>
-        </View>
-      </View>
-
-      {/* ── Yo'qotilgan tovarlar jadvali ── */}
-      <Card className="mb-4">
-        <View className="flex-row justify-between items-center mb-3">
-          <Text style={[styles.cardTitle, { marginBottom: 0 }]}>
-            Yo'qotilgan tovarlar
-          </Text>
-          <Pressable
-            onPress={() => setAddLostModal(true)}
-            className="bg-indigo-50 p-2 rounded-full"
-          >
-            <MaterialIcons name="add" size={20} color="#6366f1" />
-          </Pressable>
-        </View>
-        {lostProducts.length === 0 ? (
-          <Text style={styles.emptyText}>
-            Yo'qotilgan tovarlar mavjud emas.
-          </Text>
-        ) : (
-          <View style={styles.table}>
-            <View style={styles.tableHead}>
-              <Text style={[styles.headCell, { flex: 2 }]}>Sana</Text>
-              <Text style={[styles.headCell, { flex: 1, textAlign: "right" }]}>
-                Miqdor
+    <>
+      <Stack.Screen
+        options={{
+          title: lot?.name + " Dashboard" || "Partiya Dashboard",
+        }}
+      />
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+      >
+        <View className="flex-row flex-wrap">
+          <View className="w-1/2 flex-row mb-3 px-1">
+            <Card className="w-full">
+              <Text className="font-semibold text-primary mb-1">
+                Jami tovarlar:
               </Text>
-            </View>
-            {lostProducts.map((lp, index) => (
-              <View
-                key={lp.id}
-                style={[
-                  styles.tableRow,
-                  index === lostProducts.length - 1 && { borderBottomWidth: 0 },
-                ]}
-              >
-                <Text style={[styles.cell, { flex: 2 }]}>
-                  {formatDate(lp.date)}
-                </Text>
+              <Text className="font-bold text-md">
+                {lot?.product_count}{" "}
+                <Text className="font-normal text-xs text-gray-500">dona</Text>
+              </Text>
+            </Card>
+          </View>
+          <View className="w-1/2 flex-row mb-3 px-1">
+            <Card className="w-full">
+              <Text className="font-semibold text-danger mb-1">
+                Yo'qotilgan tovarlar
+              </Text>
+              <Text className="font-bold text-md">
+                {stats.lostCount}{" "}
+                <Text className="font-normal text-xs text-gray-500">dona</Text>
+              </Text>
+            </Card>
+          </View>
+          <View className="w-1/2 flex-row mb-3 px-1">
+            <Card className="w-full">
+              <Text className="font-semibold text-primary mb-1">
+                Buyurtmalar:
+              </Text>
+              <Text className="font-bold text-md">
+                {formatMoney(stats.totalSum)}{" "}
+                <Text className="font-normal text-xs text-gray-500">so'm</Text>
+              </Text>
+              <Text className="font-bold text-md">
+                {stats.totalCount}{" "}
+                <Text className="font-normal text-xs text-gray-500">dona</Text>
+              </Text>
+            </Card>
+          </View>
+
+          <View className="w-1/2 flex-row mb-3 px-1">
+            <Card className="w-full">
+              <Text className="font-semibold text-warning">
+                Bekor qilingan buyurtmalar:
+              </Text>
+              <Text className="text-xs text-gray-500">
+                {stats.cancelCount} dona
+              </Text>
+            </Card>
+          </View>
+          <View className="w-1/2 flex-row mb-3 px-1">
+            <Card className="w-full bg-indigo-100">
+              <Text className="font-semibold text-indigo-600 mb-1">
+                Sotilgan:
+              </Text>
+              <Text className="font-bold text-md">
+                {formatMoney(stats.doneSum)}{" "}
+                <Text className="font-normal text-xs text-gray-500">so'm</Text>
+              </Text>
+              <Text className="text-xs text-gray-500">
+                {stats.doneCount} dona
+              </Text>
+            </Card>
+          </View>
+          <View className="w-1/2 flex-row mb-3 px-1">
+            <Card className="w-full bg-red-100/50">
+              <Text className="font-semibold text-red-600 mb-1">
+                Jami xarajat:
+              </Text>
+              <Text className="font-bold text-md">
+                {formatMoney(stats.totalExpenses)}{" "}
+                <Text className="font-normal text-xs text-gray-500">so'm</Text>
+              </Text>
+            </Card>
+          </View>
+          <View className="w-1/2 flex-row mb-3 px-1">
+            <Card className="w-full bg-green-100/50 ">
+              <Text className="font-semibold text-green-600 mb-1">
+                Sof foyda:
+              </Text>
+              <Text className="font-bold text-md">
+                {formatMoney(stats.netProfit)}{" "}
+                <Text className="font-normal text-xs text-gray-500">so'm</Text>
+              </Text>
+            </Card>
+          </View>
+        </View>
+
+        {/* ── Yo'qotilgan tovarlar jadvali ── */}
+        <Card className="mb-4">
+          <View className="flex-row justify-between items-center mb-3">
+            <Text style={[styles.cardTitle, { marginBottom: 0 }]}>
+              Yo'qotilgan tovarlar
+            </Text>
+            <Pressable
+              onPress={() => setAddLostModal(true)}
+              className="bg-indigo-50 p-2 rounded-full"
+            >
+              <MaterialIcons name="add" size={20} color="#6366f1" />
+            </Pressable>
+          </View>
+          {lostProducts.length === 0 ? (
+            <Text style={styles.emptyText}>
+              Yo'qotilgan tovarlar mavjud emas.
+            </Text>
+          ) : (
+            <View style={styles.table}>
+              <View style={styles.tableHead}>
+                <Text style={[styles.headCell, { flex: 2 }]}>Sana</Text>
                 <Text
+                  style={[styles.headCell, { flex: 1, textAlign: "right" }]}
+                >
+                  Miqdor
+                </Text>
+              </View>
+              {lostProducts.map((lp, index) => (
+                <View
+                  key={lp.id}
                   style={[
-                    styles.cell,
-                    {
-                      flex: 1,
-                      textAlign: "right",
-                      fontWeight: "600",
-                      color: "#ef4444",
+                    styles.tableRow,
+                    index === lostProducts.length - 1 && {
+                      borderBottomWidth: 0,
                     },
                   ]}
                 >
-                  {lp.count} dona
-                </Text>
-              </View>
-            ))}
-          </View>
-        )}
-      </Card>
-
-      {/* ── Buyurtmalar jadvali ── */}
-      <Card className="overflow-x-auto min-w-[360px]">
-        <View className="flex-row justify-between items-center mb-3">
-          <Text style={[styles.cardTitle, { marginBottom: 0 }]}>
-            Tovarlar taqsimoti
-          </Text>
-          <Pressable
-            onPress={() => setAddLineModal(true)}
-            className="bg-indigo-50 p-2 rounded-full"
-          >
-            <MaterialIcons name="add" size={20} color="#6366f1" />
-          </Pressable>
-        </View>
-        {orders.length === 0 ? (
-          <Text style={styles.emptyText}>
-            Partiyaga tegishli buyurtmalar mavjud emas.
-          </Text>
-        ) : (
-          <View style={styles.table}>
-            <View style={styles.tableHead}>
-              <Text style={{ width: 24 }}>№</Text>
-              <Text style={[styles.headCell, { flex: 1.5 }]}>Viloyat</Text>
-              <Text style={[styles.headCell, { flex: 1, textAlign: "center" }]}>
-                Miqdor
-              </Text>
-              <Text
-                style={[styles.headCell, { flex: 1.5, textAlign: "center" }]}
-              >
-                Narx
-              </Text>
-              <Text
-                style={[styles.headCell, { flex: 1.5, textAlign: "right" }]}
-              >
-                Yetkazish
-              </Text>
-              <Text
-                style={[styles.headCell, { flex: 1.5, textAlign: "right" }]}
-              >
-                Status
-              </Text>
+                  <Text style={[styles.cell, { flex: 2 }]}>
+                    {formatDate(lp.date)}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.cell,
+                      {
+                        flex: 1,
+                        textAlign: "right",
+                        fontWeight: "600",
+                        color: "#ef4444",
+                      },
+                    ]}
+                  >
+                    {lp.count} dona
+                  </Text>
+                </View>
+              ))}
             </View>
-            {orders.map((order, index) => (
-              <View
-                key={order.id}
-                style={[
-                  styles.tableRow,
-                  index === orders.length - 1 && { borderBottomWidth: 0 },
-                ]}
-              >
-                <Text style={{ width: 24 }} numberOfLines={2}>
-                  {index + 1}
-                </Text>
+          )}
+        </Card>
+
+        {/* ── Xarajatlar jadvali ── */}
+        <Card className="mb-4">
+          <View className="flex-row justify-between items-center mb-3">
+            <Text style={[styles.cardTitle, { marginBottom: 0 }]}>
+              Partiya xarajatlari
+            </Text>
+            <Pressable
+              onPress={() => setAddExpenseModal(true)}
+              className="bg-green-50 p-2 rounded-full"
+            >
+              <MaterialIcons name="add" size={20} color="#10b981" />
+            </Pressable>
+          </View>
+          {expenses.length === 0 ? (
+            <Text style={styles.emptyText}>Xarajatlar mavjud emas.</Text>
+          ) : (
+            <View style={styles.table}>
+              <View style={styles.tableHead}>
+                <Text style={[styles.headCell, { flex: 2 }]}>Nomi</Text>
                 <Text
-                  style={[
-                    styles.cell,
-                    { flex: 1.5, textTransform: "capitalize" },
-                  ]}
-                  numberOfLines={1}
+                  style={[styles.headCell, { flex: 1.5, textAlign: "right" }]}
                 >
-                  {order.region_name}
-                </Text>
-                <Text
-                  style={[
-                    styles.cell,
-                    { flex: 1, textAlign: "center", fontWeight: "600" },
-                  ]}
-                >
-                  {order.product_count}
-                </Text>
-                <Text style={[styles.cell, { flex: 1.5, textAlign: "right" }]}>
-                  {formatMoney(order.product_price)}
-                </Text>
-                <Text
-                  style={[
-                    styles.cell,
-                    { flex: 1.5, textAlign: "right", color: "#6b7280" },
-                  ]}
-                >
-                  {formatMoney(order.delivery_price)}
-                </Text>
-                <Text
-                  style={[
-                    styles.cell,
-                    { flex: 1.5, textAlign: "right", color: "#6b7280" },
-                  ]}
-                >
-                  {order.state === "new" ? (
-                    <MaterialIcons
-                      name="add-circle"
-                      size={20}
-                      color="#6366f1"
-                    />
-                  ) : order.state === "done" ? (
-                    <MaterialIcons
-                      name="check-circle"
-                      size={20}
-                      color="#28a745"
-                    />
-                  ) : order.state === "cancel" ? (
-                    <MaterialIcons name="cancel" size={20} color="#ef4444" />
-                  ) : order.state === "reschedule" ? (
-                    <MaterialIcons name="update" size={20} color="#ffc107" />
-                  ) : null}
+                  Summa
                 </Text>
               </View>
-            ))}
+              {expenses.map((ex, index) => (
+                <View
+                  key={ex.id}
+                  style={[
+                    styles.tableRow,
+                    index === expenses.length - 1 && { borderBottomWidth: 0 },
+                  ]}
+                >
+                  <View style={{ flex: 2 }}>
+                    <Text style={styles.cell} numberOfLines={1}>
+                      {ex.name}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: "#6b7280" }}>
+                      {ex.count} x {formatMoney(ex.price_per_unit)}
+                    </Text>
+                  </View>
+                  <Text
+                    style={[
+                      styles.cell,
+                      {
+                        flex: 1.5,
+                        textAlign: "right",
+                        fontWeight: "600",
+                        color: "#ef4444",
+                      },
+                    ]}
+                  >
+                    {formatMoney(ex.total_price)} so'm
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </Card>
+
+        {/* ── Buyurtmalar jadvali ── */}
+        <Card className="overflow-x-auto min-w-[360px]">
+          <View className="flex-row justify-between items-center mb-3">
+            <Text style={[styles.cardTitle, { marginBottom: 0 }]}>
+              Tovarlar taqsimoti
+            </Text>
+            <Pressable
+              onPress={() => setAddLineModal(true)}
+              className="bg-indigo-50 p-2 rounded-full"
+            >
+              <MaterialIcons name="add" size={20} color="#6366f1" />
+            </Pressable>
           </View>
-        )}
-      </Card>
+          {orders.length === 0 ? (
+            <Text style={styles.emptyText}>
+              Partiyaga tegishli buyurtmalar mavjud emas.
+            </Text>
+          ) : (
+            <View style={styles.table}>
+              <View style={styles.tableHead}>
+                <Text style={{ width: 24 }}>№</Text>
+                <Text style={[styles.headCell, { flex: 1.5 }]}>Viloyat</Text>
+                <Text
+                  style={[styles.headCell, { flex: 1, textAlign: "center" }]}
+                >
+                  Miqdor
+                </Text>
+                <Text
+                  style={[styles.headCell, { flex: 1.5, textAlign: "center" }]}
+                >
+                  Narx
+                </Text>
+                <Text
+                  style={[styles.headCell, { flex: 1.5, textAlign: "right" }]}
+                >
+                  Yetkazish
+                </Text>
+                <Text
+                  style={[styles.headCell, { flex: 1.5, textAlign: "right" }]}
+                >
+                  Status
+                </Text>
+              </View>
+              {orders.map((order, index) => (
+                <Pressable
+                  key={order.id}
+                  onPress={() => {
+                    setEditOrder(order);
+                    setAddLineModal(true);
+                  }}
+                  style={[
+                    styles.tableRow,
+                    index === orders.length - 1 && { borderBottomWidth: 0 },
+                  ]}
+                >
+                  <Text style={{ width: 24 }} numberOfLines={2}>
+                    {index + 1}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.cell,
+                      { flex: 1.5, textTransform: "capitalize" },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {order.region_name}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.cell,
+                      { flex: 1, textAlign: "center", fontWeight: "600" },
+                    ]}
+                  >
+                    {order.product_count}
+                  </Text>
+                  <Text
+                    style={[styles.cell, { flex: 1.5, textAlign: "right" }]}
+                  >
+                    {formatMoney(order.product_price)}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.cell,
+                      { flex: 1.5, textAlign: "right", color: "#6b7280" },
+                    ]}
+                  >
+                    {formatMoney(order.delivery_price)}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.cell,
+                      { flex: 1.5, textAlign: "right", color: "#6b7280" },
+                    ]}
+                  >
+                    {order.state === "new" ? (
+                      <MaterialIcons
+                        name="add-circle"
+                        size={20}
+                        color="#6366f1"
+                      />
+                    ) : order.state === "done" ? (
+                      <MaterialIcons
+                        name="check-circle"
+                        size={20}
+                        color="#28a745"
+                      />
+                    ) : order.state === "cancel" ? (
+                      <MaterialIcons name="cancel" size={20} color="#ef4444" />
+                    ) : order.state === "reschedule" ? (
+                      <MaterialIcons name="update" size={20} color="#ffc107" />
+                    ) : null}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+        </Card>
 
-      <View style={{ height: 40 }} />
+        <View style={{ height: 40 }} />
 
-      <LostProductModal
-        visible={addLostModal}
-        onClose={() => setAddLostModal(false)}
-        lotId={lotId as string}
-        lot={lot}
-        onSuccess={(newLost, newTotal) => {
-          if (lot) {
-            setLot({ ...lot, lost_products: newTotal });
-          }
-          setLostProducts((prev) =>
-            [...prev, newLost].sort((a, b) => a.timestamp - b.timestamp),
-          );
-        }}
-      />
+        <LostProductModal
+          visible={addLostModal}
+          onClose={() => setAddLostModal(false)}
+          lotId={lotId as string}
+          lot={lot}
+        />
 
-      <OrderModal
-        visible={addLineModal}
-        onClose={() => setAddLineModal(false)}
-        lotId={lotId as string}
-        onSuccess={handleOrderSuccess}
-      />
-    </ScrollView>
+        <OrderModal
+          visible={addLineModal}
+          onClose={() => {
+            setAddLineModal(false);
+            setEditOrder(null);
+          }}
+          lotId={lotId as string}
+          editLine={editOrder}
+        />
+
+        <LotExpenseModal
+          visible={addExpenseModal}
+          onClose={() => setAddExpenseModal(false)}
+          lotId={lotId as string}
+          lot={lot}
+        />
+      </ScrollView>
+    </>
   );
 };
 

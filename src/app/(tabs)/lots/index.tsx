@@ -119,7 +119,7 @@ const Lots = () => {
         <FlatList
           data={lots}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={{ padding: 8, gap: 8, paddingBottom: 100 }}
+          contentContainerStyle={{ padding: 12, gap: 8, paddingBottom: 100 }}
           ListEmptyComponent={() => (
             <View className="items-center mt-20">
               <MaterialIcons name="inventory" size={48} color="gray" />

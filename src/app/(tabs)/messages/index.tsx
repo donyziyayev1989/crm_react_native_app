@@ -4,6 +4,7 @@ import { chatEvents } from "@/utils/chat_events";
 import { formatPhone } from "@/utils/format";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Customer, Lead, LeadChat } from "@interfaces/index";
+import { Stack } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -11,14 +12,17 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 const Messages = () => {
   const [chats, setChats] = useState<LeadChat[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     // 1. Lead chats watch
@@ -67,6 +71,24 @@ const Messages = () => {
     return map;
   }, [customers, leads]);
 
+  const filteredChats = useMemo(() => {
+    if (!searchQuery.trim()) return chats;
+
+    const query = searchQuery.toLowerCase().trim();
+    return chats.filter((chat) => {
+      const target = nameMap[chat.id || chat.lead_id];
+      if (!target) return false;
+
+      const nameMatch = target.name.toLowerCase().includes(query);
+      const phoneMatch = target.phone
+        .replace(/\D/g, "")
+        .includes(query.replace(/\D/g, ""));
+      const originalPhoneMatch = target.phone.includes(query);
+
+      return nameMatch || phoneMatch || originalPhoneMatch;
+    });
+  }, [chats, searchQuery, nameMap]);
+
   const renderChatItem = ({ item }: { item: LeadChat }) => {
     const target = nameMap[item.id || item.lead_id] || {
       name: "Noma'lum foydalanuvchi",
@@ -76,8 +98,7 @@ const Messages = () => {
 
     return (
       <Pressable
-        className="rounded-xl overflow-hidden"
-        style={styles.boxShadow}
+        style={styles.borderDotted}
         onPress={() =>
           chatEvents.emit({
             chatId: item.id || item.lead_id,
@@ -87,7 +108,7 @@ const Messages = () => {
         }
       >
         <Card
-          className={`rounded-xl ${
+          className={`py-3 ${
             hasUnread ? "bg-blue-50 border-l-4 border-blue-500" : ""
           }`}
         >
@@ -140,32 +161,50 @@ const Messages = () => {
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
+      <Stack.Screen options={{ headerShown: false }} />
       {loading ? (
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="large" color="#3b82f6" />
         </View>
       ) : (
-        <FlatList
-          data={chats}
-          renderItem={renderChatItem}
-          keyExtractor={(item) => item.id || item.lead_id}
-          contentContainerStyle={{ padding: 12, gap: 10 }}
-          ListEmptyComponent={
-            <View className="flex-1 items-center justify-center mt-20">
-              <MaterialIcons
-                name="chat-bubble-outline"
-                size={64}
-                color="#d1d5db"
-              />
-              <Text className="text-gray-400 mt-4 text-lg">
-                Xabarlar mavjud emas
-              </Text>
-            </View>
-          }
-        />
+        <View style={{ flex: 1 }}>
+          <View style={styles.searchContainer}>
+            <MaterialIcons name="search" size={22} color="#9ca3af" />
+            <TextInput
+              placeholder="Ism yoki telefon raqami bo'yicha qidirish..."
+              placeholderTextColor="#9ca3af"
+              style={styles.searchInput}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              clearButtonMode="while-editing"
+            />
+            {searchQuery.length > 0 && (
+              <Pressable onPress={() => setSearchQuery("")}>
+                <MaterialIcons name="close" size={20} color="#9ca3af" />
+              </Pressable>
+            )}
+          </View>
+          <FlatList
+            data={filteredChats}
+            renderItem={renderChatItem}
+            keyExtractor={(item) => item.id || item.lead_id}
+            ListEmptyComponent={
+              <View className="flex-1 items-center justify-center mt-20">
+                <MaterialIcons
+                  name="chat-bubble-outline"
+                  size={64}
+                  color="#d1d5db"
+                />
+                <Text className="text-gray-400 mt-4 text-lg">
+                  {searchQuery ? "Natija topilmadi" : "Xabarlar mavjud emas"}
+                </Text>
+              </View>
+            }
+          />
+        </View>
       )}
-    </View>
+    </SafeAreaView>
   );
 };
 
@@ -176,11 +215,27 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#f9fafb",
   },
-  boxShadow: {
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
+  borderDotted: {
+    borderBottomWidth: 1,
+    borderColor: "#e5e7eb",
+    borderStyle: "dotted",
+  },
+  searchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    margin: 12,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    height: 48,
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    color: "#111827",
+    height: "100%",
   },
 });

@@ -1,14 +1,15 @@
 import Card from "@/components/Card";
 import db from "@/services/database";
-import { auth } from "@/firebase/firebase";
+import {
+  auth,
+  federatedGoogleAuthProvider,
+  federatedOnAuthStateChanged,
+  federatedSignInWithCredential,
+  federatedSignOut,
+} from "@/firebase/firebase";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Link, Stack } from "expo-router";
-import {
-  GoogleAuthProvider,
-  signInWithCredential,
-  signOut,
-  User,
-} from "firebase/auth";
+import { User } from "firebase/auth";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -54,7 +55,7 @@ export default function Profile() {
   }, []);
 
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((currentUser) => {
+    const unsubscribe = federatedOnAuthStateChanged((currentUser) => {
       setUser(currentUser);
       setLoading(false);
     });
@@ -63,7 +64,7 @@ export default function Profile() {
 
   const signIn = async () => {
     try {
-      if (Platform.OS === "web") {
+      if (Platform.OS === ("web" as string)) {
         Alert.alert(
           "Xato",
           "Web versiyada Google orqali kirish hali qo'shilmagan",
@@ -85,8 +86,9 @@ export default function Profile() {
 
       if (!idToken) throw new Error("No ID Token found");
 
-      const googleCredential = GoogleAuthProvider.credential(idToken);
-      const userCredential = await signInWithCredential(auth, googleCredential);
+      const googleCredential = federatedGoogleAuthProvider.credential(idToken);
+      const userCredential =
+        await federatedSignInWithCredential(googleCredential);
       const currentUser = userCredential.user;
 
       // Save/Update user in Firestore
@@ -99,7 +101,6 @@ export default function Profile() {
 
       Alert.alert("Tizimga kirildi", "Muvaffaqiyatli tizimga kirdingiz!");
     } catch (error: any) {
-      console.error(error);
       Alert.alert(
         "Xatolik",
         "Tizimga kirishda xatolik yuz berdi: " + error.message,
@@ -112,9 +113,9 @@ export default function Profile() {
   const logOut = async () => {
     try {
       setLoading(true);
-      await signOut(auth);
+      await federatedSignOut();
       const GSignin = getGoogleSignin();
-      if (Platform.OS !== "web" && GSignin) {
+      if (Platform.OS !== ("web" as string) && GSignin) {
         await GSignin.signOut();
       }
     } catch (error: any) {
