@@ -1,5 +1,5 @@
 import CustomModal from "@/components/CustomModal";
-import { Customer, Order, Product, User } from "@/interfaces";
+import { Customer, Order, Product } from "@/interfaces";
 import db from "@/services/database";
 import { Coordinate, MapboxService } from "@/services/mapboxService";
 import { RouteService } from "@/services/routeService";
@@ -14,6 +14,7 @@ import Mapbox, {
 } from "@rnmapbox/maps";
 import { callPhone } from "@utils/actions";
 import { formatPhone } from "@utils/format";
+import { useRouter } from "expo-router";
 import React, {
   useCallback,
   useEffect,
@@ -42,16 +43,8 @@ interface LotMapViewProps {
   orders: (Order & { id: string })[];
   customers: (Customer & { id: string })[];
   products: (Product & { id: string })[];
-  users: (User & { id: string })[];
-  lots?: any[];
   onOrderPress: (orderId: string) => void;
   onUpdate?: () => void;
-  onLocationUpdate?: (
-    id: string,
-    lat: number,
-    lng: number,
-    type: "order" | "customer",
-  ) => void;
 }
 
 const LotMapView: React.FC<LotMapViewProps> = ({
@@ -61,6 +54,7 @@ const LotMapView: React.FC<LotMapViewProps> = ({
   onOrderPress,
   onUpdate,
 }) => {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [locations, setLocations] = useState<Map<string, Coordinate>>(
     new Map(),
@@ -145,32 +139,32 @@ const LotMapView: React.FC<LotMapViewProps> = ({
       }
 
       // Use userCoord if available, otherwise just use the first order as the starting point.
-      const hasRealStart = !!startCoord;
       const originCoord =
         startCoord || (coordList.length > 0 ? coordList[0] : undefined);
+      const hasRealStart = !!startCoord;
 
       let finalOrderedIds: string[] = [];
-      let optimized = false;
+      let optimizedResult = false;
 
-      // Mapbox Optimization API is the most optimal (traffic-aware TSP solver)
+      // 1. Try Mapbox Optimization API (max 12 stops) - Traffic-aware TSP
       if (coordList.length <= 12) {
-        // Try Mapbox Optimization API (perfect TSP, max 12 coordinates)
         try {
           const route = await MapboxService.getOptimizedRoute(coordList);
           if (route && route.waypoints && route.waypoints.length > 0) {
             setRouteData(route);
             const optimizedIds: string[] = [];
 
-            // Sorted by visit order
-            const sorted = [...route.waypoints].sort(
+            // Sorted by visit order (trips_index)
+            const sortedWaypoints = [...route.waypoints].sort(
               (a: any, b: any) =>
                 a.trips_index - b.trips_index ||
                 a.waypoint_index - b.waypoint_index,
             );
 
-            sorted.forEach((wp: any) => {
+            sortedWaypoints.forEach((wp: any) => {
               const inputIndex = wp.waypoint_index;
               if (hasRealStart) {
+                // Skip the driver location (inputIndex 0)
                 if (inputIndex > 0) {
                   optimizedIds.push(orderIds[inputIndex - 1]);
                 }
@@ -181,18 +175,18 @@ const LotMapView: React.FC<LotMapViewProps> = ({
 
             if (optimizedIds.filter(Boolean).length === orderIds.length) {
               finalOrderedIds = optimizedIds.filter(Boolean);
-              optimized = true;
+              optimizedResult = true;
             }
           }
-        } catch {
-          // fall through to fallback
+        } catch (e) {
+          console.error("Optimization failed:", e);
         }
       }
 
-      if (!optimized) {
-        // ── Fallback: Local Haversine nearest-neighbor ──
+      // 2. Fallback to Nearest Neighbor if Optimization is not used or failed
+      if (!optimizedResult) {
         if (originCoord) {
-          finalOrderedIds = nearestNeighborOrder(currentLocations, originCoord);
+          finalOrderedIds = nearestNeighborOrder(activeLocations, originCoord);
         } else {
           finalOrderedIds = orderIds;
         }
@@ -207,16 +201,25 @@ const LotMapView: React.FC<LotMapViewProps> = ({
         if (c) finalCoords.push(c);
       });
 
-      // Fetch the actual polyline for the greedy route if we fell back to local math
-      if (!optimized && finalCoords.length >= 2 && finalCoords.length <= 25) {
+      // Fetch the actual polyline ONLY if we didn't get it from the Optimization API
+      if (
+        !optimizedResult &&
+        finalCoords.length >= 2 &&
+        finalCoords.length <= 25
+      ) {
         try {
           const route = await MapboxService.getDirections(finalCoords);
           if (route) {
             setRouteData(route);
+          } else {
+            setRouteData(null);
           }
         } catch (e) {
           console.error("Directions route fetch failed", e);
+          setRouteData(null);
         }
+      } else if (!optimizedResult && finalCoords.length < 2) {
+        setRouteData(null);
       }
     },
     [nearestNeighborOrder, orders, customers, setOrderedOrderIds, setRouteData],
@@ -532,18 +535,31 @@ const LotMapView: React.FC<LotMapViewProps> = ({
   );
 
   /** Driver mode: ordered stops list */
-   const driverStops = useMemo(() => {
-    return orderedOrderIds
-      .map((id, idx) => {
+  const driverStops = useMemo(() => {
+    let sortedList = orderedOrderIds
+      .map((id) => {
         const order = orders.find((o) => o.id === id);
         // Only include active stops in the panel
         if (!order || order.state === "done" || order.state === "cancel")
           return null;
         const customer = customers.find((c) => c.id === order.customer_id);
-        return { id, order, customer, idx };
+        const coord = locations.get(id);
+        return { id, order, customer, coord };
       })
       .filter((stop): stop is any => stop !== null);
-  }, [orderedOrderIds, orders, customers]);
+
+    // Final safety sort: Ensure the VERY first stop is indeed the nearest one to current location
+    // This handles cases where orderedOrderIds might be slightly stale during movement
+    if (userCoord && sortedList.length > 0) {
+      sortedList.sort((a, b) => {
+        const distA = MapboxService.getDistance(userCoord, a.coord);
+        const distB = MapboxService.getDistance(userCoord, b.coord);
+        return distA - distB;
+      });
+    }
+
+    return sortedList.map((stop, index) => ({ ...stop, idx: index }));
+  }, [orderedOrderIds, orders, customers, locations, userCoord]);
 
   const focusOnStop = useCallback((coord: Coordinate) => {
     cameraRef.current?.setCamera({
@@ -658,7 +674,7 @@ const LotMapView: React.FC<LotMapViewProps> = ({
                 isDragMode && styles.toolBtnTextActive,
               ]}
             >
-              Surish
+              Joylashuvni tahrirlash
             </Text>
           </TouchableOpacity>
 
@@ -685,6 +701,19 @@ const LotMapView: React.FC<LotMapViewProps> = ({
           >
             <MaterialIcons name="share" size={20} color="#6366f1" />
             <Text style={styles.toolBtnText}>Ulashish</Text>
+          </TouchableOpacity>
+
+          {/* close mapview */}
+          <TouchableOpacity
+            style={styles.toolBtn}
+            onPress={() => {
+              setShowToolbar(false);
+              router.back();
+            }}
+            activeOpacity={0.8}
+          >
+            <MaterialIcons name="close" size={20} color="#6366f1" />
+            <Text style={styles.toolBtnText}>Yopish</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -1032,7 +1061,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 5,
   },
-  shareBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
 
   // ── Driver Panel ─────────────────────────────────────────────────────────────
   driverPanel: {
