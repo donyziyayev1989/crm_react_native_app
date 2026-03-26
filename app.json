@@ -46,8 +46,7 @@
       [
         "@rnmapbox/maps",
         {
-          "RNMapboxMapsImpl": "mapbox",
-          "RNMAPBOX_MAPS_DOWNLOAD_TOKEN": "sk.eyJ1IjoiZG9ueXppeWF5ZXYxOTg5IiwiYSI6ImNtbXI5dDdqMDB2bmsycnNpaHJvc2Y4emkifQ.zGo6kviHoc6Ryn2D9e9WtQ"
+          "RNMapboxMapsImpl": "mapbox"
         }
       ],
       "@react-native-firebase/app"

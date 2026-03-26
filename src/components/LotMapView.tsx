@@ -3,6 +3,7 @@ import { Customer, Order, Product } from "@/interfaces";
 import db from "@/services/database";
 import { Coordinate, MapboxService } from "@/services/mapboxService";
 import { RouteService } from "@/services/routeService";
+import { formatMoney } from "@/utils/format";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import Mapbox, {
   Camera,
@@ -347,10 +348,17 @@ const LotMapView: React.FC<LotMapViewProps> = ({
       const customer = customers.find((c) => c.id === order?.customer_id);
       const name = customer?.name || "Noma'lum";
       const count = order?.product_count ?? 0;
+      const region = order?.region_name || customer?.region_name || "";
       const district = order?.district_name || customer?.district_name || "";
+      const product = products.find((p) => p.id === order?.product_id);
+      const phone_number = customer?.phone?.replace(/\s+/g, "");
+      const total_price =
+        (Number(order?.product_price ?? 0) +
+          Number(order?.delivery_price ?? 0)) *
+        count;
 
       stopNames.push(
-        `${idx + 1}. ${name} — ${count} ta${district ? ` (${district})` : ""}`,
+        `${idx + 1}. ${name} (${phone_number}) — (${district}, ${region}) \n 📦 ${count} ta ${product?.name} \n 💰 Narxi: ${formatMoney(order?.product_price)} so'm \n 🚚 Yolkira: ${formatMoney(order?.delivery_price)} so'm \n ✅ Jami: ${formatMoney(total_price)} so'm \n --------------------------------------------------`,
       );
     });
 
