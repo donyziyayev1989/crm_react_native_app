@@ -1,0 +1,28 @@
+{
+  "cli": {
+    "version": ">= 18.4.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal"
+    },
+    "production": {
+      "autoIncrement": true,
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN": "pk.eyJ1IjoiZG9ueXppeWF5ZXYxOTg5IiwiYSI6ImNtbXI5b3d6MzB2bTgycnNpdHFqMWNwMHIifQ.jlOblM9UFxp8pYEQe9hmXQ",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "537571948273-2a1i0q2shc4c8rtmvmdd30f6qd3a3hu7.apps.googleusercontent.com"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}
