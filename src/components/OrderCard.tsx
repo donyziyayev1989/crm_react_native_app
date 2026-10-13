@@ -31,41 +31,40 @@ const OrderCard: React.FC<OrderCardProps> = ({
   return (
     <Card className={className}>
       {/* Header: Title and status */}
-      <View className="flex-row justify-between items-center mb-2">
-        <View style={styles.infoItem}>
-          <MaterialIcons name={topIconName} size={16} color="#6b7280" />
-          <View className="flex flex-row gap-2">
-            <Text className="font-semibold text-primary">{title}</Text>
-            {!!subtitle && <Text style={styles.phoneText}>({subtitle})</Text>}
-          </View>
-        </View>
-        <Text
-          style={[
-            styles.stateBadge,
-            item.state === "done"
-              ? styles.stateDone
-              : item.state === "cancel"
-                ? styles.stateCancel
-                : item.state === "reschedule"
-                  ? styles.stateReschedule
-                  : styles.stateNew,
-          ]}
-        >
-          {item.state === "done"
-            ? "Bajarildi"
-            : item.state === "cancel"
-              ? "Bekor"
-              : item.state === "reschedule"
-                ? "Boshqa partiyaga"
-                : "Yangi"}
-        </Text>
+      <View className="flex-row justify-between items-center mb-2 gap-1">
+        <MaterialIcons name={topIconName} size={16} color="#6b7280" />
+        <Text className="font-semibold text-primary">{title}</Text>
+        <Text className="ml-auto text-slate-700 font-semibold">{subtitle}</Text>
       </View>
 
       {/* Product Name */}
       <View className="flex-row items-center mb-1">
-        <View style={styles.infoItem}>
+        <View className="w-2/3" style={styles.infoItem}>
           <MaterialIcons name="shopping-bag" size={16} color="#6b7280" />
           <Text style={styles.infoText}>{productName}</Text>
+        </View>
+        <View className="w-1/3 items-end">
+          <Text
+            style={[
+              styles.stateBadge,
+              item.state === "done"
+                ? styles.stateDone
+                : item.state === "cancel"
+                  ? styles.stateCancel
+                  : item.state === "reschedule"
+                    ? styles.stateReschedule
+                    : styles.stateNew,
+            ]}
+            className="inline-flex"
+          >
+            {item.state === "done"
+              ? "Bajarildi"
+              : item.state === "cancel"
+                ? "Bekor"
+                : item.state === "reschedule"
+                  ? "Boshqa partiyaga"
+                  : "Yangi"}
+          </Text>
         </View>
       </View>
 
@@ -159,6 +158,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 99,
     overflow: "hidden",
+    textAlign: "center",
   },
   stateNew: { backgroundColor: "#dbeafe", color: "#1d4ed8" },
   stateDone: { backgroundColor: "#dcfce7", color: "#15803d" },

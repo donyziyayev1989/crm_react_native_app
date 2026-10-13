@@ -43,8 +43,10 @@ export const openTelegram = async (
   }
   // ---------------------------
 
-  const idStr = String(identifier).trim().replace("@", "");
-  const isNumeric = /^\d+$/.test(idStr);
+  // Bo'shliqlarni va @ belgisini olib tashlaymiz, faqat raqamli yoki username formatini olish uchun
+  const rawId = String(identifier).trim().replace("@", "");
+  const idStr = rawId.replace(/\s/g, ""); // Bo'shliqlarni olib tashlaymiz
+  const isNumeric = /^\+?\d+$/.test(idStr);
 
   try {
     // 1. Agar foydalanuvchi ID bo'lsa (numeric va 998 bilan boshlanmasa)

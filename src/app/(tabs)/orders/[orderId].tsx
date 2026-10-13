@@ -1,11 +1,10 @@
-import Card from "@/components/Card";
 import OrderDetailView from "@/components/OrderDetailView";
 import OrderModal from "@/components/OrderModal";
-import { Customer, Order, Product, User, ProductLot } from "@/interfaces";
+import { Customer, Order, Product, ProductLot, User } from "@/interfaces";
 import db from "@/services/database";
-import { formatDate, formatMoney, formatPhone } from "@utils/format";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { useLocalSearchParams, useRouter, Stack } from "expo-router";
+import { openTelegram } from "@utils/actions";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -15,7 +14,6 @@ import {
   Text,
   View,
 } from "react-native";
-import { callPhone, openTelegram } from "@utils/actions";
 
 /**
  * Buyurtma Tafsiloti sahifasi
@@ -38,13 +36,21 @@ const OrderDetail = () => {
       try {
         const orderData = await db.orders.get(orderId);
         if (orderData) {
-          setOrder(orderData as (Order & { id: string }));
+          setOrder(orderData as Order & { id: string });
           const orderObj = orderData as Order;
           const [cust, prod, usr, lt] = await Promise.all([
-            orderObj.customer_id ? db.customers.get(orderObj.customer_id) : Promise.resolve(null),
-            orderObj.product_id ? db.products.get(orderObj.product_id) : Promise.resolve(null),
-            orderObj.user_id ? db.users.get(orderObj.user_id) : Promise.resolve(null),
-            orderObj.lotId ? db.lots.get(orderObj.lotId) : Promise.resolve(null),
+            orderObj.customer_id
+              ? db.customers.get(orderObj.customer_id)
+              : Promise.resolve(null),
+            orderObj.product_id
+              ? db.products.get(orderObj.product_id)
+              : Promise.resolve(null),
+            orderObj.user_id
+              ? db.users.get(orderObj.user_id)
+              : Promise.resolve(null),
+            orderObj.lotId
+              ? db.lots.get(orderObj.lotId)
+              : Promise.resolve(null),
           ]);
           setCustomer(cust);
           setProduct(prod);
@@ -76,9 +82,35 @@ const OrderDetail = () => {
     );
   }
 
+  const { referral, customerId: refCustomerId } = useLocalSearchParams<{
+    referral?: string;
+    customerId?: string;
+  }>();
+
   return (
     <ScrollView style={styles.container}>
-      <Stack.Screen options={{ title: customer?.name || "Buyurtma" }} />
+      <Stack.Screen
+        options={{
+          title: customer?.name || "Buyurtma",
+          headerTitleAlign: "center",
+          headerLeft: () => (
+            <Pressable
+              onPress={() => {
+                if (referral === "customer" && refCustomerId) {
+                  router.push(`/customers/${refCustomerId}`);
+                } else if (router.canGoBack()) {
+                  router.back();
+                } else {
+                  router.replace("/");
+                }
+              }}
+              style={{ marginRight: 8 }}
+            >
+              <MaterialIcons name="arrow-back" size={24} color="#333" />
+            </Pressable>
+          ),
+        }}
+      />
       <View style={styles.content}>
         <OrderDetailView
           order={order}
@@ -89,7 +121,10 @@ const OrderDetail = () => {
         />
 
         <View style={styles.actions}>
-          <Pressable style={styles.editBtn} onPress={() => setEditModalVisible(true)}>
+          <Pressable
+            style={styles.editBtn}
+            onPress={() => setEditModalVisible(true)}
+          >
             <MaterialIcons name="edit" size={20} color="#fff" />
             <Text style={styles.btnText}>Tahrirlash</Text>
           </Pressable>
@@ -122,26 +157,45 @@ const OrderDetail = () => {
   );
 };
 
-const getStatusColor = (state: string) => {
-  switch (state) {
-    case "done": return "#28a745";
-    case "cancel": return "#dc3545";
-    case "reschedule": return "#ffc107";
-    default: return "#6366f1";
-  }
-};
-
 export default OrderDetail;
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f9fafb" },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   content: { padding: 16 },
-  row: { flexDirection: "row", paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#f3f4f6" },
-  label: { width: "35%", color: "#6b7280", fontWeight: "600", fontSize: 13, textTransform: "uppercase" },
+  row: {
+    flexDirection: "row",
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f3f4f6",
+  },
+  label: {
+    width: "35%",
+    color: "#6b7280",
+    fontWeight: "600",
+    fontSize: 13,
+    textTransform: "uppercase",
+  },
   value: { flex: 1, color: "#111827", fontSize: 14, fontWeight: "500" },
   actions: { flexDirection: "row", marginTop: 20, gap: 12 },
-  editBtn: { flex: 1, flexDirection: "row", backgroundColor: "#6366f1", padding: 14, borderRadius: 12, alignItems: "center", justifyContent: "center", gap: 8 },
-  telegramBtn: { flex: 1, flexDirection: "row", padding: 14, borderRadius: 12, alignItems: "center", justifyContent: "center", gap: 8 },
+  editBtn: {
+    flex: 1,
+    flexDirection: "row",
+    backgroundColor: "#6366f1",
+    padding: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  telegramBtn: {
+    flex: 1,
+    flexDirection: "row",
+    padding: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
   btnText: { color: "#fff", fontWeight: "600", fontSize: 14 },
 });

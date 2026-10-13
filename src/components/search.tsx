@@ -1,24 +1,27 @@
-import Select from '@/components/Select';
-import db from '@/services/database';
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-import { Pressable, TextInput, View } from 'react-native';
+import Select from "@/components/Select";
+import db from "@/services/database";
+import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import { useRouter } from "expo-router";
+import React, { useEffect, useState } from "react";
+import { Pressable, TextInput, View } from "react-native";
 
 /**
  * Search (Mijozlarni qidirish va filtrlash)
  */
-const Search = ({ initialValue = '' } : { initialValue?: string }) => {
+const Search = ({ initialValue = "" }: { initialValue?: string }) => {
   const [val, setVal] = useState(initialValue);
   const [allLots, setAllLots] = useState<any[]>([]);
   const [allRegions, setAllRegions] = useState<any[]>([]);
-  const [lotId, setLotId] = useState<string>('');
-  const [region, setRegion] = useState<string>('');
+  const [allTags, setAllTags] = useState<any[]>([]);
+  const [lotId, setLotId] = useState<string>("");
+  const [region, setRegion] = useState<string>("");
+  const [tagId, setTagId] = useState<string>("");
   const [showFilter, setShowFilter] = useState(false);
   const router = useRouter();
 
   const handleSearch = () => {
-    const selectedLot = allLots.find(o => o.value === lotId);
+    const selectedLot = allLots.find((o) => o.value === lotId);
+    const selectedTag = allTags.find((o) => o.value === tagId);
     const params: Record<string, string> = {};
 
     if (val.trim()) params.q = val.trim();
@@ -27,9 +30,13 @@ const Search = ({ initialValue = '' } : { initialValue?: string }) => {
       if (selectedLot) params.lotName = selectedLot.label;
     }
     if (region) params.region = region;
+    if (tagId) {
+      params.tagId = tagId;
+      if (selectedTag) params.tagName = selectedTag.label;
+    }
 
     router.push({
-      pathname: '/customers/search_results',
+      pathname: "/customers/search_results",
       params,
     });
   };
@@ -54,61 +61,94 @@ const Search = ({ initialValue = '' } : { initialValue?: string }) => {
       setAllRegions(regionsData);
     });
 
+    // Teglarni real-time kuzatish
+    const unsubTags = db.tags.watch((data) => {
+      const tagsData = data.map((tag: any) => ({
+        label: tag.name,
+        value: tag.id,
+      }));
+      setAllTags(tagsData);
+    });
+
     return () => {
       unsubLots();
       unsubRegions();
+      unsubTags();
     };
   }, []);
 
   return (
     <>
-      <View className='flex-row items-center p-2'>
-        <Pressable className="ml-2 px-2" onPress={() => setShowFilter(!showFilter)}>
-          <MaterialIcons name="filter-alt" size={24} color={showFilter ? "#6366f1" : "gray"} />
+      <View className="flex-row items-center p-2">
+        <Pressable
+          className="ml-2 px-2"
+          onPress={() => setShowFilter(!showFilter)}
+        >
+          <MaterialIcons
+            name="filter-alt"
+            size={24}
+            color={showFilter ? "#6366f1" : "gray"}
+          />
         </Pressable>
         <TextInput
-          placeholder="Qidirish telefon raqami..."
+          placeholder="Mijoz ismi yoki telefoni..."
           value={val}
           onChangeText={setVal}
           onSubmitEditing={handleSearch}
-          className='flex-1 border border-gray-300 rounded-full px-4 py-3 bg-white focus:border-primary'
+          className="flex-1 border border-gray-300 rounded-full px-4 py-3 bg-white focus:border-primary"
         />
         <Pressable onPress={handleSearch} className="ml-2 px-2">
           <MaterialIcons name="search" size={28} color="gray" />
         </Pressable>
       </View>
-      {showFilter &&
-        <View className='flex px-2 gap-2 flex-row'>
-          <View className='flex-1'>
-            <Select
-              name="lot_id"
-              data={allLots}
-              search={true}
-              placeholder="Partiyalar"
-              searchPlaceholder="Qidirish..."
-              maxHeight={300}
-              value={lotId}
-              onChange={(val) => {
-                setLotId(val);
-              }}
-            />
+      {showFilter && (
+        <View className="flex px-2 gap-2">
+          <View className="flex-row gap-2">
+            <View className="flex-1">
+              <Select
+                name="lot_id"
+                data={allLots}
+                search={true}
+                placeholder="Partiyalar"
+                searchPlaceholder="Qidirish..."
+                maxHeight={300}
+                value={lotId}
+                onChange={(val) => {
+                  setLotId(val);
+                }}
+              />
+            </View>
+            <View className="flex-1">
+              <Select
+                name="region_ids"
+                data={allRegions}
+                search={true}
+                placeholder="Viloyatlar"
+                searchPlaceholder="Qidirish..."
+                maxHeight={300}
+                value={region}
+                onChange={(val) => {
+                  setRegion(val);
+                }}
+              />
+            </View>
           </View>
-          <View className='flex-1'>
+          <View>
             <Select
-              name="region_ids"
-              data={allRegions}
+              name="tag_id"
+              data={allTags}
               search={true}
-              placeholder="Viloyatlar"
-              searchPlaceholder="Qidirish..."
+              placeholder="Teg bo'yicha filter"
+              searchPlaceholder="Teg qidirish..."
               maxHeight={300}
-              value={region}
+              value={tagId}
               onChange={(val) => {
-                setRegion(val);
+                setTagId(val);
               }}
             />
           </View>
         </View>
-      }
+      )}
     </>
   );
 };

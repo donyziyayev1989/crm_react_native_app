@@ -152,99 +152,104 @@ const OrderDashboard = () => {
     <>
       <Stack.Screen
         options={{
-          title: lot?.name + " Dashboard" || "Partiya Dashboard",
+          title: lot?.name || "Partiya Dashboard",
         }}
       />
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.content}
       >
-        <View className="flex-row flex-wrap">
-          <View className="w-1/2 flex-row mb-3 px-1">
-            <Card className="w-full">
-              <Text className="font-semibold text-primary mb-1">
-                Jami tovarlar:
-              </Text>
-              <Text className="font-bold text-md">
-                {lot?.product_count}{" "}
-                <Text className="font-normal text-xs text-gray-500">dona</Text>
-              </Text>
-            </Card>
+        <Card className="mb-4">
+          <Text className="text-center text-lg font-bold mb-1 ">
+            Tovarlar soni
+          </Text>
+          <View className="w-full flex-row p-2 justify-between items-center border-b border-slate-300 border-dashed">
+            <Text className="font-semibold text-primary">Jami tovarlar:</Text>
+            <Text className="font-bold text-md">
+              {lot?.product_count}{" "}
+              <Text className="font-normal text-xs text-gray-500">dona</Text>
+            </Text>
           </View>
-          <View className="w-1/2 flex-row mb-3 px-1">
-            <Card className="w-full">
-              <Text className="font-semibold text-danger mb-1">
-                Yo'qotilgan tovarlar
-              </Text>
-              <Text className="font-bold text-md">
-                {stats.lostCount}{" "}
-                <Text className="font-normal text-xs text-gray-500">dona</Text>
-              </Text>
-            </Card>
+          <View className="flex-row p-2 justify-between items-center border-b border-slate-300 border-dashed">
+            <Text className="font-semibold text-danger">
+              Yo'qotilgan tovarlar
+            </Text>
+            <Text className="font-bold text-md text-danger">
+              {stats.lostCount}{" "}
+              <Text className="font-normal text-xs text-gray-500">dona</Text>
+            </Text>
           </View>
-          <View className="w-1/2 flex-row mb-3 px-1">
-            <Card className="w-full">
-              <Text className="font-semibold text-primary mb-1">
-                Buyurtmalar:
-              </Text>
-              <Text className="font-bold text-md">
-                {formatMoney(stats.totalSum)}{" "}
-                <Text className="font-normal text-xs text-gray-500">so'm</Text>
-              </Text>
-              <Text className="font-bold text-md">
-                {stats.totalCount}{" "}
-                <Text className="font-normal text-xs text-gray-500">dona</Text>
-              </Text>
-            </Card>
+          <View className="flex-row p-2 justify-between items-center ">
+            <Text className="font-semibold">Qolgan tovarlar</Text>
+            <Text className="font-bold text-md">
+              {lot?.product_count - stats.lostCount}{" "}
+              <Text className="font-normal text-xs text-gray-500">dona</Text>
+            </Text>
+          </View>
+        </Card>
+        <Card className="mb-4">
+          <Text className="text-center text-lg font-bold mb-1 ">
+            Buyurtmalar
+          </Text>
+          <View className="w-full flex-row p-2 justify-between items-center border-b border-slate-300 border-dashed">
+            <Text className="font-semibold text-primary">
+              Jami buyurtmalar:
+            </Text>
+            <Text className="font-bold text-md">
+              {stats.totalCount}{" "}
+              <Text className="font-normal text-xs text-gray-500">dona</Text>
+            </Text>
           </View>
 
-          <View className="w-1/2 flex-row mb-3 px-1">
-            <Card className="w-full">
-              <Text className="font-semibold text-warning">
-                Bekor qilingan buyurtmalar:
-              </Text>
-              <Text className="text-xs text-gray-500">
-                {stats.cancelCount} dona
-              </Text>
-            </Card>
+          <View className="flex-row p-2 justify-between items-center">
+            <Text className="font-semibold ">Buyurtma olish uchun miqdor:</Text>
+            <Text
+              className={`font-bold text-md ${
+                lot?.product_count - stats.lostCount - stats.totalCount === 0
+                  ? "text-slate-600"
+                  : lot?.product_count - stats.lostCount - stats.totalCount > 0
+                    ? "text-green-600"
+                    : "text-red-600"
+              }`}
+            >
+              {lot?.product_count - stats.lostCount - stats.totalCount}{" "}
+              <Text className="font-normal text-xs text-gray-500">dona</Text>
+            </Text>
           </View>
-          <View className="w-1/2 flex-row mb-3 px-1">
-            <Card className="w-full bg-indigo-100">
-              <Text className="font-semibold text-indigo-600 mb-1">
-                Sotilgan:
-              </Text>
-              <Text className="font-bold text-md">
-                {formatMoney(stats.doneSum)}{" "}
-                <Text className="font-normal text-xs text-gray-500">so'm</Text>
-              </Text>
-              <Text className="text-xs text-gray-500">
-                {stats.doneCount} dona
-              </Text>
-            </Card>
+        </Card>
+        <Card className="mb-4">
+          <Text className="text-center text-lg font-bold mb-1 ">Moliya</Text>
+          <View className="flex-row p-2 justify-between items-center border-b border-slate-300 border-dashed">
+            <Text className="font-semibold text-indigo-600 mb-1">
+              Sotilgan:
+            </Text>
+            <Text className="font-bold text-md">
+              {formatMoney(stats.doneSum)}{" "}
+              <Text className="font-normal text-xs text-gray-500">so'm</Text>
+            </Text>
+            <Text className="text-xs text-gray-500">
+              {stats.doneCount} dona
+            </Text>
           </View>
-          <View className="w-1/2 flex-row mb-3 px-1">
-            <Card className="w-full bg-red-100/50">
-              <Text className="font-semibold text-red-600 mb-1">
-                Jami xarajat:
-              </Text>
-              <Text className="font-bold text-md">
-                {formatMoney(stats.totalExpenses)}{" "}
-                <Text className="font-normal text-xs text-gray-500">so'm</Text>
-              </Text>
-            </Card>
+          <View className="flex-row p-2 justify-between items-center border-b border-slate-300 border-dashed">
+            <Text className="font-semibold text-red-600 mb-1">
+              Jami xarajat:
+            </Text>
+            <Text className="font-bold text-md">
+              {formatMoney(stats.totalExpenses)}{" "}
+              <Text className="font-normal text-xs text-gray-500">so'm</Text>
+            </Text>
           </View>
-          <View className="w-1/2 flex-row mb-3 px-1">
-            <Card className="w-full bg-green-100/50 ">
-              <Text className="font-semibold text-green-600 mb-1">
-                Sof foyda:
-              </Text>
-              <Text className="font-bold text-md">
-                {formatMoney(stats.netProfit)}{" "}
-                <Text className="font-normal text-xs text-gray-500">so'm</Text>
-              </Text>
-            </Card>
+          <View className="flex-row p-2 justify-between items-center">
+            <Text className="font-semibold text-green-600 mb-1">
+              Sof foyda:
+            </Text>
+            <Text className="font-bold text-md">
+              {formatMoney(stats.netProfit)}{" "}
+              <Text className="font-normal text-xs text-gray-500">so'm</Text>
+            </Text>
           </View>
-        </View>
+        </Card>
 
         {/* ── Yo'qotilgan tovarlar jadvali ── */}
         <Card className="mb-4">

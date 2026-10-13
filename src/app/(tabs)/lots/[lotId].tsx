@@ -11,7 +11,7 @@ import {
   ProductLot,
   User,
 } from "@/interfaces";
-import db, { where } from "@/services/database";
+import db, { orderBy, where } from "@/services/database";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { callPhone, openTelegram } from "@utils/actions";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
@@ -93,6 +93,7 @@ const OrderDetail = () => {
         setExpenses(data as (LotExpense & { id: string })[]);
       },
       where("lotId", "==", lotId),
+      orderBy("timestamp", "desc"),
     );
 
     const unsubLost = db.lost_products.watch(
@@ -100,6 +101,7 @@ const OrderDetail = () => {
         setLost(data as (LostProduct & { id: string })[]);
       },
       where("lotId", "==", lotId),
+      orderBy("timestamp", "desc"),
     );
 
     return () => {

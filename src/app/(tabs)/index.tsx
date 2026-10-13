@@ -36,10 +36,16 @@ export default function Index() {
             <Text style={styles.cardText}>Mahsulotlar</Text>
           </Pressable>
         </Link>
-        <Link href="/customers" asChild>
+        <Link href="/tags" asChild>
           <Pressable style={styles.card}>
-            <MaterialIcons name="people" size={32} color="#10b981" />
-            <Text style={styles.cardText}>Mijozlar</Text>
+            <MaterialIcons name="label" size={32} color="#8b5cf6" />
+            <Text style={styles.cardText}>Teglar</Text>
+          </Pressable>
+        </Link>
+        <Link href="/orders" asChild>
+          <Pressable style={styles.card}>
+            <MaterialIcons name="assignment" size={32} color="#10b981" />
+            <Text style={styles.cardText}>Xaridlar</Text>
           </Pressable>
         </Link>
         <Link href="/faqt" asChild>

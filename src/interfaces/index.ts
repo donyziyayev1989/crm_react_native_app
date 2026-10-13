@@ -29,6 +29,7 @@ export interface ProductLot {
   date: string; // ISO date string
   product_count: number;
   lost_products: number;
+  order_count?: number;
 }
 
 export interface LostProduct {

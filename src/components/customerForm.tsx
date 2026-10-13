@@ -157,9 +157,20 @@ const CustomerForm = ({
         phone: data.phone.replace(/\D/g, ""),
       };
 
-      // Check uniqueness
+      // Dublikatni tekshirish (Bir nechta formatda qidiramiz)
+      const digits = cleanedData.phone;
+      const phoneQueries = [digits];
+      if (digits.length === 9) {
+        phoneQueries.push(`+998 ${digits}`);
+        phoneQueries.push("998" + digits);
+      } else if (digits.length === 12 && digits.startsWith("998")) {
+        phoneQueries.push(`+998 ${digits.slice(3)}`);
+        phoneQueries.push(digits.slice(3));
+      }
+      
+      const uniqueQueries = [...new Set(phoneQueries)];
       const existingCustomers = await db.customers.list(
-        where("phone", "==", cleanedData.phone),
+        where("phone", "in", uniqueQueries),
       );
       const duplicate = existingCustomers.find((c) => c.id !== initialData?.id);
 
@@ -247,9 +258,15 @@ const CustomerForm = ({
             name="phone"
             rules={{
               required: "Telefon kiritilishi shart",
-              pattern: {
-                value: /^\+998 [0-9]{2} [0-9]{3} [0-9]{2} [0-9]{2}$/,
-                message: "Noto'g'ri telefon raqami",
+              validate: (val) => {
+                // PhoneInput "+998 " + unmasked digits saqlaydi
+                // unmasked = faqat raqamlar (9 ta): "901234567"
+                // natija: "+998 901234567"
+                const digits = (val || "").replace(/\D/g, "");
+                if (digits.length !== 12) {
+                  return "Noto'g'ri telefon raqami";
+                }
+                return true;
               },
             }}
             render={({ field: { onChange, value } }) => (
@@ -258,7 +275,7 @@ const CustomerForm = ({
                 value={value}
                 errors={errors}
                 onChange={onChange}
-                placeholder="+998 __ ___-__-__"
+                placeholder="__ ___-__-__"
               />
             )}
           />

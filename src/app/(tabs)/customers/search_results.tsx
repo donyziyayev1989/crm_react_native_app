@@ -6,11 +6,13 @@ import React, { useEffect, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
 
 const SearchResults = () => {
-  const { q, lotId, region, lotName } = useLocalSearchParams<{
+  const { q, lotId, region, lotName, tagId, tagName } = useLocalSearchParams<{
     q?: string;
     lotId?: string;
     region?: string;
     lotName?: string;
+    tagId?: string;
+    tagName?: string;
   }>();
   const [results, setResults] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(false);
@@ -23,9 +25,28 @@ const SearchResults = () => {
 
         // Telefon raqami bo'yicha qidiruv
         if (q && q.trim()) {
-          const sanitizedPhone = q.replace(/\D/g, "");
-          if (sanitizedPhone) {
-            constraints.push(where("phone", "==", sanitizedPhone));
+          const queryText = q.trim();
+          const digitsOnly = queryText.replace(/\D/g, "");
+          
+          if (digitsOnly.length >= 7) {
+            const phoneVariants = [digitsOnly]; // 998939404021
+            
+            if (digitsOnly.length === 9) {
+              phoneVariants.push(`+998 ${digitsOnly}`); // +998 939404021
+              phoneVariants.push("998" + digitsOnly);   // 998939404021
+            } else if (digitsOnly.length === 12 && digitsOnly.startsWith("998")) {
+              const mainPart = digitsOnly.slice(3);
+              phoneVariants.push(`+998 ${mainPart}`);   // +998 939404021
+              phoneVariants.push(mainPart);              // 939404021
+            }
+
+            // Dublikatlarni olib tashlaymiz
+            const uniqueVariants = [...new Set(phoneVariants)];
+            constraints.push(where("phone", "in", uniqueVariants));
+          } else {
+            // Agar raqam bo'lmasa, ism bo'yicha qidirishga harakat qilamiz
+            constraints.push(where("name", ">=", queryText));
+            constraints.push(where("name", "<=", queryText + "\uf8ff"));
           }
         }
 
@@ -37,6 +58,11 @@ const SearchResults = () => {
         // Viloyat bo'yicha filter
         if (region && region !== "") {
           constraints.push(where("region_name", "==", region));
+        }
+
+        // Teg bo'yicha filter
+        if (tagId && tagId !== "") {
+          constraints.push(where("tag_ids", "array-contains", tagId));
         }
 
         constraints.push(limit(20));
@@ -51,7 +77,7 @@ const SearchResults = () => {
     };
 
     performSearch();
-  }, [q, lotId, region]);
+  }, [q, lotId, region, tagId]);
 
   if (loading) {
     return (
@@ -66,9 +92,14 @@ const SearchResults = () => {
       <Stack.Screen
         options={{
           title:
-            `Qidiruv: ${(lotName && lotName + ",") || ""} ${(region && region + ",") || ""} ${q ? `"${q}"` : ""}`
-              .trim()
-              .replace(/\s+/g, " "),
+            [
+              lotName && `Partiya: ${lotName}`,
+              region && `Viloyat: ${region}`,
+              tagName && `Teg: ${tagName}`,
+              q && `"${q}"`,
+            ]
+              .filter(Boolean)
+              .join(" · ") || "Qidiruv natijalari",
         }}
       />
 

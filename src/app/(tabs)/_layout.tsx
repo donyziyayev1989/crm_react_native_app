@@ -49,6 +49,17 @@ export default function TabLayout() {
               <MaterialIcons name="assignment" size={size} color={color} />
             ),
             headerShown: false,
+            href: null,
+          }}
+        />
+        <Tabs.Screen
+          name="customers"
+          options={{
+            title: "Mijozlar",
+            tabBarIcon: ({ color, size }) => (
+              <MaterialIcons name="people" size={size} color={color} />
+            ),
+            headerShown: false,
           }}
         />
         <Tabs.Screen
@@ -73,17 +84,7 @@ export default function TabLayout() {
             ),
           }}
         />
-        <Tabs.Screen
-          name="customers"
-          options={{
-            title: "Mijozlar",
-            tabBarIcon: ({ color, size }) => (
-              <MaterialIcons name="people" size={size} color={color} />
-            ),
-            headerShown: false,
-            href: null,
-          }}
-        />
+
         <Tabs.Screen
           name="messages/index"
           options={{
@@ -111,6 +112,17 @@ export default function TabLayout() {
             href: null,
             tabBarIcon: ({ color, size }) => (
               <MaterialIcons name="inventory" size={size} color={color} />
+            ),
+          }}
+        />
+
+        <Tabs.Screen
+          name="tags/index"
+          options={{
+            title: "Teglar",
+            href: null,
+            tabBarIcon: ({ color, size }) => (
+              <MaterialIcons name="label" size={size} color={color} />
             ),
           }}
         />

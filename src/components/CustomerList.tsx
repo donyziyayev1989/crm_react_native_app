@@ -178,7 +178,9 @@ const CustomerList = ({ data }: { data: Customer[] }) => {
                         className="text-green-700"
                       />
                       <Text className="text-gray-900">
-                        {item.district_name}, {item.region_name}
+                        {[item.district_name, item.region_name]
+                          .filter(Boolean)
+                          .join(", ")}
                       </Text>
                     </View>
                   </View>

@@ -1,10 +1,10 @@
 import Card from "@/components/Card";
-import { ProductLot } from "@/interfaces";
+import { Order, ProductLot } from "@/interfaces";
 import db, { orderBy } from "@/services/database";
 import { formatDate } from "@/utils/format";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Stack, useRouter } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -18,6 +18,7 @@ import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeabl
 
 const Lots = () => {
   const [lots, setLots] = useState<(ProductLot & { id: string })[]>([]);
+  const [orders, setOrders] = useState<(Order & { id: string })[]>([]);
   const router = useRouter();
   const [loading, setLoading] = useState(true);
 
@@ -33,15 +34,41 @@ const Lots = () => {
   };
 
   useEffect(() => {
-    const unsubscribe = db.lots.watch(
+    const unsubLots = db.lots.watch(
       (data) => {
         setLots(data as (ProductLot & { id: string })[]);
         setLoading(false);
       },
       orderBy("date", "desc"),
     );
-    return () => unsubscribe();
+
+    const unsubOrders = db.orders.watch((data) => {
+      setOrders(data as (Order & { id: string })[]);
+    });
+
+    return () => {
+      unsubLots();
+      unsubOrders();
+    };
   }, []);
+
+  const enrichedLots = useMemo(() => {
+    const counts = orders.reduce(
+      (acc, order) => {
+        if (order.lotId) {
+          acc[order.lotId] =
+            (acc[order.lotId] || 0) + (order.product_count || 0);
+        }
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
+
+    return lots.map((lot) => ({
+      ...lot,
+      order_count: counts[lot.id] || 0,
+    }));
+  }, [lots, orders]);
 
   const handleDelete = (id: string) => {
     Alert.alert("O'chirish", "Haqiqatan ham bu partiyani o'chirmoqchimisiz?", [
@@ -117,7 +144,7 @@ const Lots = () => {
       />
       <View className="flex-1">
         <FlatList
-          data={lots}
+          data={enrichedLots}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ padding: 12, gap: 8, paddingBottom: 100 }}
           ListEmptyComponent={() => (
@@ -201,6 +228,44 @@ const Lots = () => {
                                 ).toFixed(1)
                               : 0}
                             % )
+                          </Text>
+                        </Text>
+                      </View>
+                    </View>
+                    {/* Qoldiq va jami buyurtmalar soni */}
+                    <View className="flex-row justify-between mt-1">
+                      <View className="flex-row items-center gap-1">
+                        <MaterialIcons
+                          name="assignment-turned-in"
+                          size={14}
+                          color="#6366f1"
+                        />
+                        <Text className="text-sm text-gray-600">
+                          Qoldiq:{" "}
+                          <Text className="font-semibold text-gray-800">
+                            {item.product_count - (item.lost_products || 0)}
+                          </Text>
+                        </Text>
+                      </View>
+                      <View className="flex-row items-center gap-1">
+                        <MaterialIcons
+                          name="shopping-cart"
+                          size={14}
+                          color="#6366f1"
+                        />
+                        <Text className="text-sm text-gray-600">
+                          Jami buyurtmalar:{" "}
+                          <Text
+                            className={`font-semibold ${
+                              item.order_count -
+                                item.product_count +
+                                item.lost_products >
+                              0
+                                ? "text-red-500"
+                                : "text-gray-800"
+                            }`}
+                          >
+                            {item.order_count || 0}
                           </Text>
                         </Text>
                       </View>
