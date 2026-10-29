@@ -131,8 +131,25 @@ export interface FAQ {
   updatedAt?: string;
 }
 
+/** Lead tarkibidagi bitta mahsulot (sayt buyurtmasi yoki Telegram murojaati) */
+export interface LeadItem {
+  product_id: string;
+  name: string;
+  price: number | null; // null — narx keyin kelishiladi
+  quantity: number;
+}
+
 export interface Lead {
   id?: string;
+  source: "website" | "telegram" | "manual";
+  items?: LeadItem[];
+  address?: string;
+  locale?: string;
+  total?: number;
+  has_unpriced?: boolean;
+  number?: number;
+  customer_id?: string;
+  order_ids?: string[];
   name: string;
   phone: string;
   telegram_id: string;

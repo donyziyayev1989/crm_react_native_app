@@ -1,7 +1,9 @@
 /**
- * Adapter integratsiya testi — LOKAL Supabase stekka qarshi (migratsiyalar 0001-0008 qo'llangan).
+ * Adapter integratsiya testi — LOKAL Supabase stekka qarshi (kurka.uz migratsiyalari 0001-0016 qo'llangan).
+ * Umumiy `public` jadvallarga (lots, tags, products, faqs, ...) yozish faqat admin uchun —
+ * test foydalanuvchisi `admin` rolida yaratiladi.
  * Ishga tushirish:
- *   SUPABASE_TEST_URL=http://127.0.0.1:55321 SUPABASE_TEST_ANON_KEY=... SUPABASE_TEST_SERVICE_KEY=... npx jest database.integration
+ *   SUPABASE_TEST_URL=http://127.0.0.1:54321 SUPABASE_TEST_ANON_KEY=... SUPABASE_TEST_SERVICE_KEY=... npx jest database.integration
  * Muhit o'zgaruvchilari bo'lmasa o'tkazib yuboriladi. Faqat 127.0.0.1/localhost ga yozadi.
  */
 import { createClient } from "@supabase/supabase-js";
@@ -42,7 +44,7 @@ d("db adapter (lokal Supabase)", () => {
       email_confirm: true,
     });
     if (error) throw error;
-    await admin.from("profiles").insert({ id: data.user!.id, role: "operator", name: "IT User" });
+    await admin.from("profiles").insert({ id: data.user!.id, role: "admin", name: "IT User" });
 
     q = require("../database");
     db = q.default;
@@ -52,10 +54,11 @@ d("db adapter (lokal Supabase)", () => {
   }, 30000);
 
   afterAll(async () => {
-    await admin.schema("crm").from("lots").delete().like("name", `${tag}%`);
+    await admin.from("lots").delete().like("name", `${tag}%`);
+    await admin.from("products").delete().like("name->>uz", `${tag}%`);
     await admin.schema("crm").from("customers").delete().like("name", `${tag}%`);
     await admin.schema("crm").from("lead_chats").delete().like("id", `${tag}%`);
-    await admin.schema("crm").from("faqs").delete().like("question", `${tag}%`);
+    await admin.from("faqs").delete().like("question->>uz", `${tag}%`);
     await admin.schema("crm").from("settings").delete().like("id", `${tag}%`);
     await supabase?.auth.signOut();
     const { data } = await admin.auth.admin.listUsers();
@@ -181,9 +184,78 @@ d("db adapter (lokal Supabase)", () => {
     un();
   }, 30000);
 
+  it("lots/lost_products public sxemada (crm emas)", async () => {
+    const lotId = await db.lots.create({ name: `${tag}-pub`, date: "2026-10-01", product_count: 1, lost_products: 0 });
+    const { data } = await admin.from("lots").select("id").eq("id", lotId);
+    expect(data).toEqual([{ id: lotId }]);
+    await db.lots.delete(lotId);
+  });
+
+  it("products: public.products ga uz bilan yoziladi, ru/en ga tegilmaydi", async () => {
+    const id = await db.products.create({ name: `${tag}-Test`, price: 1500, active: false });
+    const { data: row } = await admin.from("products").select("*").eq("id", id).single();
+    expect(row.name).toEqual({ uz: `${tag}-Test`, ru: "", en: "" });
+    expect(row.published).toBe(false);
+    expect(Number(row.price)).toBe(1500);
+    expect(row.slug).toEqual({ uz: id, ru: id, en: id });
+
+    // Sayt admini ru tarjimasini qo'shgan bo'lsin
+    await admin.from("products").update({ name: { ...row.name, ru: "Тест" } }).eq("id", id);
+    await db.products.update(id, { name: `${tag}-Test2`, price: 2000, active: true });
+    const { data: after } = await admin.from("products").select("*").eq("id", id).single();
+    expect(after.name).toEqual({ uz: `${tag}-Test2`, ru: "Тест", en: "" });
+    expect(after.published).toBe(true);
+    expect(Number(after.price)).toBe(2000);
+
+    const listed = (await db.products.list(q.orderBy("name", "asc"))).find((p) => p.id === id)!;
+    expect(listed).toMatchObject({ id, name: `${tag}-Test2`, price: 2000, active: true });
+    expect(typeof listed.name).toBe("string");
+    expect(await db.products.get(id)).toMatchObject({ name: `${tag}-Test2`, description: "" });
+
+    await expect(db.products.set(id, { name: "x" })).rejects.toThrow(/set\(\) qo'llab-quvvatlanmaydi/);
+    await db.products.delete(id);
+    expect(await db.products.get(id)).toBeNull();
+  });
+
+  it("products watch name (uz) bo'yicha tartiblaydi va Realtime'da yangilanadi", async () => {
+    let latest: any[] | undefined;
+    const unsub = db.products.watch((rows) => (latest = rows), q.orderBy("name", "asc"));
+    await waitFor(() => latest !== undefined);
+    await new Promise((r) => setTimeout(r, 1500));
+    const b = await db.products.create({ name: `${tag}-B`, price: 1 });
+    const a = await db.products.create({ name: `${tag}-A`, price: 1 });
+    await waitFor(() => [a, b].every((id) => latest!.some((p) => p.id === id)));
+    const mine = latest!.filter((p) => p.name.startsWith(tag)).map((p) => p.id);
+    expect(mine).toEqual([a, b]);
+    await db.products.update(a, { name: `${tag}-C` });
+    await waitFor(() => latest!.find((p) => p.id === a)?.name === `${tag}-C`);
+    expect(latest!.filter((p) => p.name.startsWith(tag)).map((p) => p.id)).toEqual([b, a]);
+    unsub();
+    await db.products.delete(a);
+    await db.products.delete(b);
+  }, 30000);
+
+  it("faqs: public.faqs ga uz bilan yoziladi, ru/en ga tegilmaydi", async () => {
+    const id = await db.faqs.create({ question: `${tag}-savol`, answer: "javob" });
+    const { data: row } = await admin.from("faqs").select("*").eq("id", id).single();
+    expect(row.question).toEqual({ uz: `${tag}-savol`, ru: "", en: "" });
+    expect(row.answer).toEqual({ uz: "javob", ru: "", en: "" });
+    expect(row.published).toBe(true);
+
+    await admin.from("faqs").update({ answer: { ...row.answer, ru: "ответ", en: "answer" } }).eq("id", id);
+    await db.faqs.update(id, { answer: "javob2", updatedAt: new Date().toISOString() });
+    const { data: after } = await admin.from("faqs").select("*").eq("id", id).single();
+    expect(after.answer).toEqual({ uz: "javob2", ru: "ответ", en: "answer" });
+    expect(after.question).toEqual(row.question);
+
+    const listed = (await db.faqs.list()).find((f) => f.id === id)!;
+    expect(listed).toMatchObject({ id, question: `${tag}-savol`, answer: "javob2" });
+    await db.faqs.delete(id);
+  });
+
   it("RLS: staff bo'lmagan va anonim kirish rad etiladi; users view faqat staffga", async () => {
     const anon = createClient(URL!, ANON!, { auth: { persistSession: false } });
-    const { data } = await anon.schema("crm").from("lots").select("*");
+    const { data } = await anon.from("lots").select("*");
     expect(data ?? []).toEqual([]);
     const users = await db.users.list();
     expect(users.some((u: any) => u.email === email)).toBe(true);

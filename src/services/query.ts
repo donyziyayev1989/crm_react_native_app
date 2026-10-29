@@ -62,6 +62,20 @@ export const docToRow = (data: Record<string, any>): Record<string, any> => {
   return out;
 };
 
+/**
+ * Cheklovlardagi maydonlarni adapter ustun ifodalariga almashtiradi (masalan `name` → `name->>uz`).
+ * Faqat server so'rovi uchun: xotiradagi tartiblash hujjat maydonlari bilan ishlaydi.
+ */
+export const mapFields = (
+  constraints: Constraint[],
+  columns: Record<string, string> | undefined,
+): Constraint[] =>
+  !columns
+    ? constraints
+    : constraints.map((c) =>
+        c.kind !== "limit" && columns[c.field] ? { ...c, field: columns[c.field] } : c,
+      );
+
 // ─── PostgREST filtr qo'llash ───────────────────────────────────────────────
 
 /** `ilike` uchun % _ \ belgilarini ekranlash */

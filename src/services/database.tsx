@@ -17,6 +17,7 @@ import {
   LotExpense,
   WithId,
 } from "@interfaces/index";
+import { CollectionAdapter, faqAdapter, productAdapter } from "./adapters";
 import { cacheRead, cacheWrite } from "./cache";
 import {
   applyConstraints,
@@ -26,6 +27,7 @@ import {
   getLimit,
   isPlainOrdered,
   makeComparator,
+  mapFields,
   rowToDoc,
   toColumn,
   where as whereConstraint,
@@ -37,18 +39,27 @@ export { where, orderBy, limit } from "./query";
 const PAGE = 1000; // PostgREST max_rows
 
 /**
+ * `crm` — CRM jadvallari (klient default'i); `public` — sayt bilan umumiy jadvallar
+ * (lots, tags, lost_products, lot_expenses, products, faqs). Realtime ham shu sxemada tinglanadi.
+ */
+type Schema = "public" | "crm";
+
+const tableOf = (schema: Schema, table: string) => supabase.schema(schema).from(table);
+
+/**
  * Hamma qatorlarni oladi. Limit berilmagan bo'lsa 1000 talik sahifalar bilan
  * (aks holda server jimgina 1000 ta bilan kesib tashlaydi).
  */
 async function fetchRows(
   table: string,
   constraints: Constraint[],
+  schema: Schema = "crm",
 ): Promise<Record<string, any>[]> {
   const lim = getLimit(constraints);
 
   if (lim !== null) {
     const { data, error } = await applyConstraints(
-      supabase.from(table).select("*") as any,
+      tableOf(schema, table).select("*") as any,
       constraints,
     );
     if (error) throw error;
@@ -58,7 +69,7 @@ async function fetchRows(
   const all: Record<string, any>[] = [];
   for (let from = 0; ; from += PAGE) {
     // `id` bo'yicha qo'shimcha tartib — sahifalar orasida qatorlar qaytarilmasligi uchun
-    const q = applyConstraints(supabase.from(table).select("*") as any, constraints)
+    const q = applyConstraints(tableOf(schema, table).select("*") as any, constraints)
       .order("id", { ascending: true })
       .range(from, from + PAGE - 1);
     const { data, error } = await q;
@@ -72,6 +83,10 @@ async function fetchRows(
 interface WatchOptions {
   /** Jadvalda Realtime yo'q (masalan view) */
   realtime?: boolean;
+  /** Default: `crm` */
+  schema?: Schema;
+  /** Filtr/tartib uchun maydon → ustun ifodasi (adapterdan) */
+  columns?: Record<string, string>;
 }
 
 /**
@@ -84,7 +99,11 @@ function startWatch<T extends { id: string }>(
   onRows: (rows: T[]) => void,
   onFailure: () => void,
   opts: WatchOptions = {},
+  toDoc: (row: Record<string, any>) => T = (row) => rowToDoc<T>(row),
 ): () => void {
+  const schema = opts.schema ?? "crm";
+  // Server so'rovi va Realtime filtri ustunlar bilan; xotiradagi tartib — hujjat maydonlari bilan
+  const server = mapFields(constraints, opts.columns);
   let active = true;
   let loaded = false;
   let hadSubscribed = false;
@@ -94,7 +113,7 @@ function startWatch<T extends { id: string }>(
   const plain = isPlainOrdered(constraints);
   const compare = makeComparator(constraints);
   const cacheKey = plain
-    ? `${table}|${constraints.map((c) => (c.kind === "orderBy" ? `${c.field}:${c.dir}` : "")).join(",")}`
+    ? `${schema === "crm" ? "" : `${schema}.`}${table}|${constraints.map((c) => (c.kind === "orderBy" ? `${c.field}:${c.dir}` : "")).join(",")}`
     : null;
 
   const emit = () => {
@@ -105,9 +124,9 @@ function startWatch<T extends { id: string }>(
 
   const load = async () => {
     try {
-      const raw = await fetchRows(table, constraints);
+      const raw = await fetchRows(table, server, schema);
       if (!active) return;
-      rows = raw.map((r) => rowToDoc<T>(r));
+      rows = raw.map(toDoc);
       loaded = true;
       emit();
     } catch (error) {
@@ -145,10 +164,10 @@ function startWatch<T extends { id: string }>(
   let channel: ReturnType<typeof supabase.channel> | null = null;
   if (opts.realtime !== false) {
     channel = supabase
-      .channel(`crm-${table}-${Math.random().toString(36).slice(2)}`)
+      .channel(`${schema}-${table}-${Math.random().toString(36).slice(2)}`)
       .on(
         "postgres_changes" as any,
-        { event: "*", schema: "crm", table },
+        { event: "*", schema, table },
         (payload: any) => {
           if (!active) return;
           if (plain && loaded) {
@@ -157,13 +176,13 @@ function startWatch<T extends { id: string }>(
               const id = payload.old?.id;
               rows = rows.filter((r) => r.id !== id);
             } else {
-              const doc = rowToDoc<T>(payload.new);
+              const doc = toDoc(payload.new);
               const i = rows.findIndex((r) => r.id === doc.id);
               rows = i === -1 ? [...rows, doc] : rows.map((r, idx) => (idx === i ? doc : r));
             }
             rows = [...rows].sort(compare);
             emit();
-          } else if (eventAffects(constraints, payload.old, payload.new)) {
+          } else if (eventAffects(server, payload.old, payload.new)) {
             scheduleLoad();
           }
         },
@@ -185,6 +204,15 @@ function startWatch<T extends { id: string }>(
   };
 }
 
+interface CollectionOptions<T> {
+  /** Default: `crm` */
+  schema?: Schema;
+  /** Jadvalda Realtime yo'q (masalan view) */
+  realtime?: boolean;
+  /** Qator <-> hujjat moslashtiruvchi (ko'p tilli sayt jadvallari); yo'q bo'lsa camelCase xaritasi */
+  adapter?: CollectionAdapter<T>;
+}
+
 /**
  * Kolleksiya o'ramasi. `scope` — kichik kolleksiya (masalan chat xabarlari) uchun doimiy
  * `ustun == qiymat` sharti.
@@ -192,8 +220,13 @@ function startWatch<T extends { id: string }>(
 function createCollection<T>(
   table: string,
   scope?: { column: string; value: string },
-  opts: WatchOptions = {},
+  opts: CollectionOptions<T> = {},
 ): CollectionMethods<T> {
+  const schema: Schema = opts.schema ?? "crm";
+  const adapter = opts.adapter;
+  const watchOpts: WatchOptions = { realtime: opts.realtime, schema, columns: adapter?.columns };
+  const q = () => tableOf(schema, table);
+
   const scoped = (constraints: Constraint[]): Constraint[] =>
     scope ? [whereConstraint(scope.column, "==", scope.value), ...constraints] : constraints;
 
@@ -202,42 +235,68 @@ function createCollection<T>(
     return doc;
   };
 
+  const toDoc = (row: Record<string, any>): any =>
+    adapter ? adapter.fromRow(row) : rowToDoc<any>(row);
+
   return {
     list: async (...constraints: Constraint[]): Promise<T[]> => {
-      const rows = await fetchRows(table, scoped(constraints));
-      return rows.map((r) => strip({ ...rowToDoc<any>(r) }) as T);
+      const rows = await fetchRows(table, mapFields(scoped(constraints), adapter?.columns), schema);
+      return rows.map((r) => strip({ ...toDoc(r) }) as T);
     },
 
     get: async (id: string): Promise<T | null> => {
-      const { data, error } = await supabase.from(table).select("*").eq("id", id).maybeSingle();
+      const { data, error } = await q().select("*").eq("id", id).maybeSingle();
       if (error) throw error;
       if (!data) return null;
-      return strip(rowToDoc<any>(data)) as T;
+      return strip(toDoc(data)) as T;
     },
 
     create: async (data: Omit<T, "id">): Promise<string> => {
-      const row = docToRow(data as any);
+      const row = adapter ? adapter.toRow(data as Partial<T>) : docToRow(data as any);
       if (scope) row[scope.column] = scope.value;
-      const { data: res, error } = await supabase.from(table).insert(row).select("id").single();
+      const { data: res, error } = await q().insert(row).select("id").single();
       if (error) throw error;
       return res.id as string;
     },
 
     update: async (id: string, data: Partial<Omit<T, "id">>): Promise<void> => {
-      const { error } = await supabase.from(table).update(docToRow(data as any)).eq("id", id);
+      let row: Record<string, any>;
+      if (adapter) {
+        // Ko'p tilli ustunlar: mavjud jsonb o'qiladi va faqat `uz` almashtiriladi (ru/en saqlanadi)
+        const touches = adapter.mergeColumns.some((c) => (data as any)[c] !== undefined);
+        let existing: Record<string, any> = {};
+        if (touches) {
+          const { data: cur, error } = await q()
+            .select(adapter.mergeColumns.join(","))
+            .eq("id", id)
+            .maybeSingle();
+          if (error) throw error;
+          if (!cur) return; // qator yo'q — oddiy update kabi hech narsa qilinmaydi
+          existing = cur as Record<string, any>;
+        }
+        row = adapter.toRow(data as Partial<T>, existing);
+        if (Object.keys(row).length === 0) return;
+      } else {
+        row = docToRow(data as any);
+      }
+      const { error } = await q().update(row).eq("id", id);
       if (error) throw error;
     },
 
     delete: async (id: string): Promise<void> => {
-      const { error } = await supabase.from(table).delete().eq("id", id);
+      const { error } = await q().delete().eq("id", id);
       if (error) throw error;
     },
 
     // Firestore setDoc(merge) kabi: yo'q bo'lsa yaratadi, bo'lsa faqat berilgan maydonlarni yangilaydi
     set: async (id: string, data: Partial<T>): Promise<void> => {
+      if (adapter) {
+        // Upsert yarim qator yozib qo'yishi mumkin (majburiy ko'p tilli ustunlar) — create/update ishlating
+        throw new Error(`db.${table}.set() qo'llab-quvvatlanmaydi: create() yoki update() ishlating`);
+      }
       const row: Record<string, any> = { ...docToRow(data as any), id };
       if (scope) row[scope.column] = scope.value;
-      const { error } = await supabase.from(table).upsert(row, { onConflict: "id" });
+      const { error } = await q().upsert(row, { onConflict: "id" });
       if (error) throw error;
     },
 
@@ -248,7 +307,8 @@ function createCollection<T>(
         (rows) => callback(rows.map((r) => strip({ ...r })) as T[]),
         // Xato (masalan ruxsat yo'q) bo'lsa ham callback chaqiriladi — ekranlar abadiy "loading" da qolmasin.
         () => callback([]),
-        opts,
+        watchOpts,
+        toDoc,
       ),
 
     watchDoc: (id: string, callback: (data: WithId<T> | null) => void) =>
@@ -257,7 +317,8 @@ function createCollection<T>(
         scoped([whereConstraint("id", "==", id)]),
         (rows) => callback(rows[0] ? (strip({ ...rows[0] }) as WithId<T>) : null),
         () => callback(null),
-        opts,
+        watchOpts,
+        toDoc,
       ),
 
     sum: async (field: string, ...constraints: Constraint[]): Promise<number> => {
@@ -271,7 +332,7 @@ function createCollection<T>(
         if (error) throw error;
         return Number(data) || 0;
       }
-      const rows = await fetchRows(table, all);
+      const rows = await fetchRows(table, mapFields(all, adapter?.columns), schema);
       return rows.reduce((acc, r) => acc + (Number(r[toColumn(field)]) || 0), 0);
     },
   };
@@ -289,22 +350,26 @@ function createSubCollection<T>(
 const db = {
   // view: Realtime yo'q
   users: createCollection<User>("users", undefined, { realtime: false }),
-  lots: createCollection<ProductLot>("lots"),
+  // Sayt bilan umumiy jadvallar — `public` sxemasida (crm'dagi bir xil nomli view'lar eski build'lar uchun)
+  lots: createCollection<ProductLot>("lots", undefined, { schema: "public" }),
   orders: createCollection<Order>("orders"),
-  products: createCollection<Product>("products"),
+  products: createCollection<Product>("products", undefined, {
+    schema: "public",
+    adapter: productAdapter(),
+  }),
   regions: createCollection<Region>("regions"),
   districts: createCollection<District>("districts"),
   customers: createCollection<Customer>("customers"),
-  tags: createCollection<Tag>("tags"),
+  tags: createCollection<Tag>("tags", undefined, { schema: "public" }),
   rates: createCollection<Rate>("rates"),
-  lost_products: createCollection<LostProduct>("lost_products"),
+  lost_products: createCollection<LostProduct>("lost_products", undefined, { schema: "public" }),
   leads: createCollection<Lead>("leads"),
   lead_chats: createCollection<LeadChat>("lead_chats"),
   // Sub-collections
   lead_messages: createSubCollection<LeadMessage>("lead_messages", "chat_id"),
-  faqs: createCollection<FAQ>("faqs"),
+  faqs: createCollection<FAQ>("faqs", undefined, { schema: "public", adapter: faqAdapter }),
   settings: createCollection<any>("settings"),
-  lot_expenses: createCollection<LotExpense>("lot_expenses"),
+  lot_expenses: createCollection<LotExpense>("lot_expenses", undefined, { schema: "public" }),
 };
 
 export default db;
