@@ -29,6 +29,8 @@ export type CrmClient = any;
 
 export interface BotDeps {
   crm: CrmClient;
+  /** `supabase.schema("public")`: umumiy products va faqs shu yerdan o'qiladi. */
+  pub: CrmClient;
   sendMessage: (chatId: number | string, text: string, extra?: Record<string, unknown>) => Promise<void>;
   answerCallbackQuery: (id: string, text?: string) => Promise<void>;
   geocode: (lat: number, lng: number) => Promise<AddressDetails>;
@@ -43,7 +45,7 @@ const FAQ_CACHE_TTL = 60 * 60 * 1000; // 1 soat
 type Session = Record<string, unknown> & { step?: string };
 
 export function createHandler(deps: BotDeps) {
-  const { crm, sendMessage, answerCallbackQuery, geocode } = deps;
+  const { crm, pub, sendMessage, answerCallbackQuery, geocode } = deps;
   const now = deps.now ?? Date.now;
   const log = deps.log ?? console.error;
 
@@ -53,9 +55,11 @@ export function createHandler(deps: BotDeps) {
   async function getCachedFaqs(): Promise<Faq[]> {
     if (faqCache && now() - lastFaqUpdate < FAQ_CACHE_TTL) return faqCache;
     try {
-      const { data, error } = await crm
+      const { data, error } = await pub
         .from("faqs")
-        .select("id, question, answer")
+        .select("id, question:question->>uz, answer:answer->>uz")
+        .eq("published", true)
+        .order("sort_order", { ascending: true })
         .order("created_at", { ascending: false })
         .limit(30);
       if (error) throw error;
@@ -188,11 +192,12 @@ export function createHandler(deps: BotDeps) {
 
     // ─── 2: Ism ──────────────────────────────────────────────────────────
     if (text && sessionData.step === "request_name") {
-      const { data: products, error } = await crm
+      const { data: products, error } = await pub
         .from("products")
-        .select("id, name")
-        .eq("active", true)
-        .order("name", { ascending: true });
+        .select("id, price, name:name->>uz")
+        .eq("published", true)
+        .order("sort_order", { ascending: true })
+        .order("name->>uz", { ascending: true });
       if (error) throw error;
 
       if (!products || products.length === 0) {
@@ -217,11 +222,11 @@ export function createHandler(deps: BotDeps) {
 
     // ─── 2.5: Mahsulot ───────────────────────────────────────────────────
     if (text && sessionData.step === "request_product") {
-      const { data: product, error } = await crm
+      const { data: product, error } = await pub
         .from("products")
-        .select("id, name")
-        .eq("active", true)
-        .eq("name", text)
+        .select("id, price, name:name->>uz")
+        .eq("published", true)
+        .eq("name->>uz", text)
         .limit(1)
         .maybeSingle();
       if (error) throw error;
@@ -236,6 +241,7 @@ export function createHandler(deps: BotDeps) {
         step: "request_count",
         product_id: product.id,
         product_name: product.name,
+        product_price: product.price ?? null,
       });
       await sendMessage(
         chatId,
@@ -261,13 +267,27 @@ export function createHandler(deps: BotDeps) {
     if (location && sessionData.step === "request_location") {
       const { region, district } = await geocode(location.latitude, location.longitude);
 
+      const productId = (sessionData.product_id as string) || null;
+      const productCount = (sessionData.product_count as number) || 0;
+      const productName = (sessionData.product_name as string) || "Noma'lum mahsulot";
+      const items = productId
+        ? [{
+          product_id: productId,
+          name: productName,
+          price: (sessionData.product_price as number | null) ?? null,
+          quantity: productCount,
+        }]
+        : [];
+
       const { error } = await crm.from("leads").insert({
+        source: "telegram",
+        items,
         name: (sessionData.name as string) || "Noma'lum",
         phone: sessionData.phoneNumber,
         telegram_id: sessionData.telegram_id,
-        product_id: sessionData.product_id || null,
-        product_name: (sessionData.product_name as string) || "Noma'lum mahsulot",
-        product_count: (sessionData.product_count as number) || 0,
+        product_id: productId,
+        product_name: productName,
+        product_count: productCount,
         region_name: region,
         district_name: district,
         location: { lat: location.latitude, lng: location.longitude },

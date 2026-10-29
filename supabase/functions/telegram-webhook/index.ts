@@ -13,6 +13,7 @@ const nominatimBase = Deno.env.get("NOMINATIM_BASE") ?? undefined;
 Deno.serve(
   createHandler({
     crm: supabase.schema("crm"),
+    pub: supabase.schema("public"),
     sendMessage: tg.sendMessage,
     answerCallbackQuery: tg.answerCallbackQuery,
     geocode: (lat, lng) => getAddressDetails(lat, lng, fetch, nominatimBase),

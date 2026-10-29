@@ -3,6 +3,7 @@
 - `telegram-webhook` — Telegram bot webhook (Firebase `functions/index.js` o'rniga).
 - `send-telegram` — ilovadan operator xabarini yuborish (JWT + faol staff tekshiruvi).
 - `_shared/` — sof mantiq (`geo.ts`, `menu.ts`, `bot.ts`, `telegram.ts`), `_tests/` — testlar.
+- `pub` (`supabase.schema("public")`) — umumiy `products` va `faqs` jadvallari (`published = true`, matn `->>uz`); `crm` — leads, customers, bot_sessions, settings.
 
 ## Sozlash
 

@@ -54,3 +54,93 @@ test("telefon +998... ko'rinishiga keladi", () => {
   assert.equal(normalizeContactPhone("998 90 123-45-67"), "+998901234567");
   assert.equal(normalizeContactPhone("+998901234567"), "+998901234567");
 });
+
+// ─── Handler fake klientlar bilan: lead source/items va public.products ─────
+function fakeClient(resolve) {
+  const calls = [];
+  return {
+    calls,
+    from(table) {
+      const q = { table, ops: [] };
+      calls.push(q);
+      const b = new Proxy(
+        {},
+        {
+          get(_, m) {
+            if (m === "then") {
+              return (ok, bad) => Promise.resolve(resolve(q)).then(ok, bad);
+            }
+            return (...args) => {
+              q.ops.push([m, ...args]);
+              return b;
+            };
+          },
+        },
+      );
+      return b;
+    },
+  };
+}
+
+test("bot: lead source=telegram + items, mahsulotlar public.products dan (published)", async () => {
+  const { createHandler } = await import("../_shared/bot.ts");
+  let session = null;
+  const leads = [];
+  const crm = fakeClient((q) => {
+    const has = (m) => q.ops.find((o) => o[0] === m);
+    if (q.table === "bot_sessions") {
+      if (has("upsert")) session = has("upsert")[1].data;
+      else if (has("delete")) session = null;
+      else return { data: session ? { data: session } : null, error: null };
+      return { error: null };
+    }
+    if (q.table === "leads") {
+      leads.push(has("insert")[1]);
+      return { error: null };
+    }
+    return { data: null, error: null };
+  });
+  const product = { id: "p1", price: 120000, name: "Kurka jo'ja" };
+  // maybeSingle so'rovi uchun bitta obyekt, ro'yxat uchun massiv
+  const pubSingle = fakeClient((q) =>
+    q.ops.some((o) => o[0] === "maybeSingle") ? { data: product, error: null } : { data: [product], error: null },
+  );
+  const sent = [];
+  const handler = createHandler({
+    crm,
+    pub: pubSingle,
+    sendMessage: async (chatId, text, extra) => void sent.push({ text, extra }),
+    answerCallbackQuery: async () => {},
+    geocode: async () => ({ region: "Namangan", district: "Chust" }),
+    webhookSecret: "s",
+    log: () => {},
+  });
+  const post = (m) =>
+    handler(
+      new Request("http://x/", {
+        method: "POST",
+        headers: { "x-telegram-bot-api-secret-token": "s" },
+        body: JSON.stringify({ message: { chat: { id: 1 }, from: { id: 2, first_name: "A" }, ...m } }),
+      }),
+    );
+  await post({ text: "🛍 Buyurtma qilish" });
+  await post({ contact: { phone_number: "998901234567" } });
+  await post({ text: "Vali" });
+  assert.deepEqual(sent.at(-1).extra.reply_markup.keyboard, [[{ text: "Kurka jo'ja" }]]);
+  await post({ text: "Kurka jo'ja" });
+  await post({ text: "50" });
+  await post({ location: { latitude: 41.5, longitude: 71.2 } });
+
+  assert.equal(leads.length, 1);
+  assert.equal(leads[0].source, "telegram");
+  assert.deepEqual(leads[0].items, [{ product_id: "p1", name: "Kurka jo'ja", price: 120000, quantity: 50 }]);
+  assert.equal(leads[0].product_id, "p1");
+  assert.equal(leads[0].product_count, 50);
+  // mahsulotlar faqat public sxemadan va faqat published
+  assert.ok(pubSingle.calls.length >= 2);
+  for (const q of pubSingle.calls) {
+    assert.equal(q.table, "products");
+    assert.ok(q.ops.some((o) => o[0] === "eq" && o[1] === "published" && o[2] === true));
+  }
+  assert.ok(!crm.calls.some((q) => q.table === "products"));
+});

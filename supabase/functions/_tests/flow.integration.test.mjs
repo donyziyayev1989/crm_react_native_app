@@ -19,10 +19,12 @@ test("bot: buyurtma oqimi → lead, keyin chat xabari", { skip }, async (t) => {
   const { createClient } = req("@supabase/supabase-js");
   const sb = createClient(url, key, { auth: { persistSession: false } });
   const crm = sb.schema("crm");
+  const pub = sb.schema("public");
 
   const sent = [];
   const handler = createHandler({
     crm,
+    pub,
     sendMessage: async (chatId, text, extra) => void sent.push({ chatId, text, extra }),
     answerCallbackQuery: async () => {},
     geocode: async () => ({ region: "Namangan", district: "Chust" }),
@@ -45,23 +47,39 @@ test("bot: buyurtma oqimi → lead, keyin chat xabari", { skip }, async (t) => {
     await crm.from("bot_sessions").delete().eq("chat_id", String(CHAT));
     await crm.from("lead_chats").delete().eq("lead_id", "bot-test-lead");
     await crm.from("leads").delete().eq("telegram_id", String(TG_ID));
-    await crm.from("products").delete().like("id", "bot-test-%");
-    await crm.from("faqs").delete().like("id", "bot-test-%");
+    await pub.from("products").delete().like("id", "bot-test-%");
+    await pub.from("faqs").delete().like("id", "bot-test-%");
     await crm.from("settings").delete().eq("id", "about_us");
   };
   await cleanup();
   t.after(cleanup);
 
-  await crm.from("products").insert([
-    { id: "bot-test-a", name: "Kurka jo'ja", active: true },
-    { id: "bot-test-b", name: "Yashirin", active: false },
+  const loc = (v) => ({ uz: v, ru: v, en: v });
+  const product = (id, name, published, price) => ({
+    id,
+    slug: loc(id),
+    name: { uz: name, ru: name + " ru", en: name + " en" },
+    summary: loc("s"),
+    description: loc("d"),
+    features: { uz: [], ru: [], en: [] },
+    published,
+    price,
+  });
+  const ins1 = await pub.from("products").insert([
+    product("bot-test-a", "Kurka jo'ja", true, 15000),
+    product("bot-test-b", "Yashirin", false, 1000),
   ]);
-  await crm.from("faqs").insert({ id: "bot-test-f", question: "Yetkazish?", answer: "Ha", created_at: "2026-01-01" });
+  assert.equal(ins1.error, null);
+  const ins2 = await pub.from("faqs").insert([
+    { id: "bot-test-f", question: { uz: "Yetkazish?", ru: "RU?", en: "EN?" }, answer: { uz: "Ha", ru: "Da", en: "Yes" }, published: true },
+    { id: "bot-test-g", question: loc("Yashirin savol"), answer: loc("x"), published: false },
+  ]);
+  assert.equal(ins2.error, null);
   await crm.from("settings").insert({ id: "about_us", text: "Biz haqimizda matni" });
 
   // secret
   assert.equal((await post({}, "wrong")).status, 401);
-  const noSecret = createHandler({ crm, sendMessage() {}, answerCallbackQuery() {}, geocode() {}, webhookSecret: undefined });
+  const noSecret = createHandler({ crm, pub, sendMessage() {}, answerCallbackQuery() {}, geocode() {}, webhookSecret: undefined });
   assert.equal((await noSecret(new Request("http://x/", { method: "POST", body: "{}" }))).status, 401);
 
   // buyurtma oqimi
@@ -74,7 +92,10 @@ test("bot: buyurtma oqimi → lead, keyin chat xabari", { skip }, async (t) => {
 
   await post(msg({ text: "Vali" }));
   const kb = sent.at(-1).extra.reply_markup.keyboard;
-  assert.deepEqual(kb, [[{ text: "Kurka jo'ja" }]]); // active=false chiqmaydi
+  // umumiy bazada boshqa published mahsulotlar ham bo'lishi mumkin
+  const names = kb.map((r) => r[0].text);
+  assert.ok(names.includes("Kurka jo'ja"));
+  assert.ok(!names.includes("Yashirin")); // published=false chiqmaydi
 
   await post(msg({ text: "Yashirin" }));
   assert.match(sent.at(-1).text, /ro'yxatdagilardan/);
@@ -96,6 +117,12 @@ test("bot: buyurtma oqimi → lead, keyin chat xabari", { skip }, async (t) => {
   assert.equal(lead.phone, "+998901234567");
   assert.equal(lead.product_id, "bot-test-a");
   assert.equal(Number(lead.product_count), 50);
+  assert.equal(lead.source, "telegram");
+  assert.equal(lead.items.length, 1);
+  assert.equal(lead.items[0].product_id, "bot-test-a");
+  assert.equal(lead.items[0].name, "Kurka jo'ja");
+  assert.equal(Number(lead.items[0].price), 15000);
+  assert.equal(lead.items[0].quantity, 50);
   assert.equal(lead.region_name, "Namangan");
   assert.equal(lead.district_name, "Chust");
   assert.deepEqual(lead.location, { lat: 41.5, lng: 71.2 });
@@ -106,7 +133,9 @@ test("bot: buyurtma oqimi → lead, keyin chat xabari", { skip }, async (t) => {
   // FAQ + about
   await post(msg({ text: "❓ Eng ko'p beriladigan savollar" }));
   assert.match(sent.at(-1).text, /Yetkazish\?/);
-  assert.equal(sent.at(-1).extra.reply_markup.inline_keyboard[0][0].callback_data, "faq_bot-test-f");
+  const faqBtns = sent.at(-1).extra.reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
+  assert.ok(faqBtns.includes("faq_bot-test-f"));
+  assert.ok(!faqBtns.includes("faq_bot-test-g")); // published=false chiqmaydi
   await post({ callback_query: { id: "cb1", data: "faq_bot-test-f", message: { chat: { id: CHAT } } } });
   assert.match(sent.at(-1).text, /✅ Ha/);
   await post(msg({ text: "ℹ️ Biz haqimizda" }));
