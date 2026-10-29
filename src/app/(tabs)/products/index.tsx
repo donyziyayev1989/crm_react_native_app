@@ -22,17 +22,17 @@ export default function ProductsScreen() {
       emptyForm={emptyForm}
       fields={[
         { name: "name", placeholder: "Nomi", required: true },
-        { name: "price", placeholder: "Narxi", keyboardType: "numeric", required: true },
+        { name: "price", placeholder: "Narxi", keyboardType: "numeric" },
         { name: "description", placeholder: "Tavsif (ixtiyoriy)", multiline: true },
       ]}
       toForm={(p) => ({
         name: p.name,
-        price: String(p.price),
+        price: p.price == null ? "" : String(p.price),
         description: p.description || "",
       })}
       fromForm={(v, editing) => ({
         name: v.name,
-        price: parseFloat(v.price),
+        price: v.price.trim() === "" ? null : parseFloat(v.price),
         description: v.description,
         active: editing ? editing.active : true,
         updatedAt: new Date(),
@@ -47,7 +47,7 @@ export default function ProductsScreen() {
             <View className="flex-1">
               <Text className="text-lg font-bold text-gray-800">{item.name}</Text>
               <Text className="text-gray-500">{item.description || "Tavsif yo'q"}</Text>
-              <Text className="text-indigo-600 font-bold mt-1">{formatSum(item.price)}</Text>
+              <Text className="text-indigo-600 font-bold mt-1">{item.price == null ? "Narx kelishiladi" : formatSum(item.price)}</Text>
             </View>
             <View className="flex-row gap-2">
               <Pressable onPress={edit} className="p-2 bg-blue-50 rounded-full">

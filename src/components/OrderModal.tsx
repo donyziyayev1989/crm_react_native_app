@@ -392,7 +392,7 @@ const OrderModal: React.FC<OrderModalProps> = ({
                 ...f,
                 product_id: v,
                 product_price: selectedProduct
-                  ? String(selectedProduct.price)
+                  ? String(selectedProduct.price ?? 0)
                   : f.product_price,
               }));
             }}

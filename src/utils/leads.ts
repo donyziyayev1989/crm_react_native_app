@@ -24,7 +24,9 @@ const SOURCE_LABELS: Record<Lead["source"], string> = {
   manual: "Qo'lda",
 };
 
-export const sourceLabel = (source: Lead["source"]): string => SOURCE_LABELS[source] ?? source;
+/** Manba nomi. `source` yo'q eski qatorlar — Telegram murojaatlari. */
+export const sourceLabel = (source: Lead["source"] | null | undefined): string =>
+  (source && SOURCE_LABELS[source]) ?? SOURCE_LABELS.telegram;
 
 /** Telefon bo'yicha qidirish uchun so'rovdagi minimal raqamlar soni */
 const MIN_PHONE_DIGITS = 7;

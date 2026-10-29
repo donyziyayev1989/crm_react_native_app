@@ -55,6 +55,10 @@ describe("sourceLabel", () => {
     expect(sourceLabel("telegram")).toBe("Telegram");
     expect(sourceLabel("manual")).toBe("Qo'lda");
   });
+
+  it("source yo'q eski qatorlar Telegram deb ko'rsatiladi", () => {
+    expect(sourceLabel(undefined)).toBe("Telegram");
+  });
 });
 
 describe("findCustomerMatches", () => {

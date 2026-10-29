@@ -51,7 +51,7 @@ const Leads = () => {
               if (lead.product_id) {
                 const product = await db.products.get(lead.product_id);
                 if (product) {
-                  productPrice = product.price;
+                  productPrice = product.price ?? 0;
                 }
               }
 

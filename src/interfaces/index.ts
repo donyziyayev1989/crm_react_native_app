@@ -54,7 +54,7 @@ export interface LotExpense {
 export interface Product {
   id?: string;
   name: string;
-  price: number;
+  price: number | null; // null — narx kelishiladi (saytda narxsiz mahsulot)
   description?: string;
   createdAt?: Date;
   updatedAt?: Date;

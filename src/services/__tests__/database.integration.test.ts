@@ -217,6 +217,19 @@ d("db adapter (lokal Supabase)", () => {
     expect(await db.products.get(id)).toBeNull();
   });
 
+  it("products: narxsiz (null) mahsulot nomini yangilash narxni null qoldiradi", async () => {
+    const id = await db.products.create({ name: `${tag}-NoPrice`, price: null });
+    const read = async () => (await admin.from("products").select("price").eq("id", id).single()).data;
+    expect((await read()).price).toBeNull();
+    expect((await db.products.get(id))!.price).toBeNull();
+    // Tahrir formasi to'liq hujjatni qaytaradi: eski ilova 0 yuborishi mumkin
+    await db.products.update(id, { name: `${tag}-NoPrice2`, price: 0, active: false });
+    expect((await read()).price).toBeNull();
+    await db.products.update(id, { name: `${tag}-NoPrice3` });
+    expect((await read()).price).toBeNull();
+    await db.products.delete(id);
+  });
+
   it("products watch name (uz) bo'yicha tartiblaydi va Realtime'da yangilanadi", async () => {
     let latest: any[] | undefined;
     const unsub = db.products.watch((rows) => (latest = rows), q.orderBy("name", "asc"));

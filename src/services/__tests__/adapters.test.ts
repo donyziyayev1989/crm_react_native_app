@@ -45,7 +45,6 @@ describe("productAdapter", () => {
       createdAt: "2026-10-01T00:00:00Z",
       updatedAt: "2026-10-02T00:00:00Z",
     });
-    expect(a.fromRow({ ...row, price: null }).price).toBe(0);
   });
 
   it("toRow (create): barcha majburiy ko'p tilli ustunlar, faqat uz to'ldirilgan", () => {
@@ -73,6 +72,26 @@ describe("productAdapter", () => {
       published: false,
     });
     expect(a.toRow({ price: 2 }, {})).toEqual({ price: 2 });
+  });
+});
+
+describe("productAdapter: null narx (narx kelishiladi)", () => {
+  const a = productAdapter(() => "fixed-id");
+
+  it("fromRow null narxni saqlaydi", () => {
+    expect(a.fromRow({ id: "p", name: { uz: "X" }, description: {}, price: null }).price).toBeNull();
+  });
+
+  it("create: null / NaN narx null bo'lib yoziladi", () => {
+    expect(a.toRow({ name: "X", price: null }).price).toBeNull();
+    expect(a.toRow({ name: "X", price: NaN }).price).toBeNull();
+  });
+
+  it("update: mavjud null ustiga 0 kelsa null qoladi; boshqa narx yoziladi", () => {
+    expect(a.toRow({ name: "X", price: 0 }, { name: {}, price: null })).toMatchObject({ price: null });
+    expect(a.toRow({ price: 0 }, { price: 5000 })).toEqual({ price: 0 });
+    expect(a.toRow({ price: 7000 }, { price: null })).toEqual({ price: 7000 });
+    expect(a.toRow({ price: null }, { price: 5000 })).toEqual({ price: null });
   });
 });
 

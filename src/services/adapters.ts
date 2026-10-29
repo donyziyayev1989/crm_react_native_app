@@ -55,13 +55,21 @@ export const uuidv4 = (): string => {
 // ─── public.products ────────────────────────────────────────────────────────
 // Sayt modeli: name/description/summary/slug/features — jsonb {uz,ru,en}, price numeric|null,
 // published boolean. Ilova `Product.active` = `published` (false — saytda yashirin).
+// Narx null — "narx kelishiladi": o'qishda ham, yozishda ham null qoladi (0 ga aylantirilmaydi).
+
+/** null/undefined/NaN → null (narx kelishiladi) */
+const priceOrNull = (v: unknown): number | null => {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
 
 export const productAdapter = (newId: () => string = uuidv4): CollectionAdapter<Product> => ({
   fromRow: (row) => ({
     id: row.id,
     name: readUz(row.name),
     description: readUz(row.description),
-    price: Number(row.price ?? 0),
+    price: priceOrNull(row.price),
     active: !!row.published,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -79,20 +87,24 @@ export const productAdapter = (newId: () => string = uuidv4): CollectionAdapter<
         description: withUz(undefined, description),
         summary: withUz(undefined, description || name),
         features: { uz: [], ru: [], en: [] },
-        price: doc.price ?? null,
+        price: priceOrNull(doc.price),
         published: doc.active ?? false,
       };
     }
     const row: Row = {};
     if (doc.name !== undefined) row.name = withUz(existing.name, doc.name);
     if (doc.description !== undefined) row.description = withUz(existing.description, doc.description);
-    if (doc.price !== undefined) row.price = doc.price;
+    if (doc.price !== undefined) {
+      const price = priceOrNull(doc.price);
+      // Tahrir formasi narxsiz mahsulotni 0 bilan qaytarishi mumkin — saytdagi null saqlanadi
+      row.price = price === 0 && existing.price === null ? null : price;
+    }
     if (doc.active !== undefined) row.published = doc.active;
     // createdAt/updatedAt: baza boshqaradi (default va trigger)
     return row;
   },
 
-  mergeColumns: ["name", "description"],
+  mergeColumns: ["name", "description", "price"],
   columns: { name: "name->>uz", description: "description->>uz", active: "published" },
 });
 
