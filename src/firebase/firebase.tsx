@@ -1,9 +1,5 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import {
-  getAuth,
-  // @ts-ignore
-  getReactNativePersistence,
-} from "firebase/auth";
+import { getAuth } from "firebase/auth";
 import {
   initializeFirestore,
   persistentLocalCache,
@@ -12,11 +8,7 @@ import {
 import { Platform } from "react-native";
 
 // Native Firebase (Android/iOS uchun) - v23+ yordamida Modular API
-import {
-  getApp as getNativeApp,
-  getApps as getNativeApps,
-  initializeApp as initializeNativeApp,
-} from "@react-native-firebase/app";
+import { getApps as getNativeApps } from "@react-native-firebase/app";
 import { getAuth as getNativeAuth } from "@react-native-firebase/auth";
 import { getFirestore as getNativeFirestore } from "@react-native-firebase/firestore";
 
@@ -35,17 +27,16 @@ const firebaseConfig = {
 export const app =
   getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-// Initialize Native Firebase
-let nativeAppInstance: any;
-if (Platform.OS !== "web") {
-  try {
-    nativeAppInstance =
-      getNativeApps().length === 0
-        ? initializeNativeApp(firebaseConfig as any)
-        : getNativeApp();
-  } catch (e) {
-    console.log("Native Firebase initialization error:", e);
-  }
+// Native Firebase (Android/iOS) [DEFAULT] app'ni native tomonda, google-services.json
+// orqali avtomatik yaratadi (prebuild paytida @react-native-firebase/app plugini
+// faylni android/app ga ko'chiradi va gradle pluginini qo'shadi). JS tomondan
+// initializeApp() chaqirish async bo'lgani uchun quyidagi sinxron getNativeAuth()
+// ga ulgurmaydi — shuning uchun bu yerda faqat tekshiramiz.
+if (Platform.OS !== "web" && getNativeApps().length === 0) {
+  throw new Error(
+    "Native Firebase [DEFAULT] app topilmadi. google-services.json native loyihaga " +
+      "ulanmagan — `npx expo prebuild --clean` qilib, keyin `npm run android` ni qayta ishga tushiring.",
+  );
 }
 
 // Auth exports

@@ -1,5 +1,6 @@
 import { LotExpense, ProductLot } from "@/interfaces";
 import db from "@/services/database";
+import { formatSum } from "@/utils/format";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -126,7 +127,7 @@ const LotExpenseModal = ({
         <View style={styles.totalRow}>
           <Text style={styles.totalLabel}>Jami summa:</Text>
           <Text style={styles.totalValue}>
-            {(Number(count) * Number(pricePerUnit)).toLocaleString()} so'm
+            {formatSum(Number(count) * Number(pricePerUnit))}
           </Text>
         </View>
 

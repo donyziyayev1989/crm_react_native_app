@@ -1,5 +1,6 @@
 import CustomModal from "@/components/CustomModal";
 import { InputProps } from "@/interfaces/index";
+import { localInputPart, toLocal9 } from "@/utils/phone";
 import { MaterialIcons } from "@expo/vector-icons";
 import React, { useState } from "react";
 import {
@@ -20,7 +21,7 @@ try {
   if (CallLogs?.default) {
     CallLogs = CallLogs.default;
   }
-} catch (e) {
+} catch {
   // react-native-call-log is not available (e.g. in Expo Go or non-android)
   CallLogs = null;
 }
@@ -51,25 +52,6 @@ const PhoneInput = ({
   const [modalVisible, setModalVisible] = useState(false);
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-
-  const formatPhoneNumberForInput = React.useCallback((phone: string) => {
-    // Extract digits and remove leading 998 if present to normalize
-    let digits = phone.replace(/\D/g, "");
-    if (digits.startsWith("998")) {
-      digits = digits.slice(3);
-    }
-
-    // Standard Uzbekistan format: +998 (2 digits) (3 digits)-(2 digits)-(2 digits)
-    // We only format if it looks like a 9-digit local number
-    if (digits.length === 9) {
-      return `+998 ${digits.slice(0, 2)} ${digits.slice(2, 5)} ${digits.slice(
-        5,
-        7,
-      )} ${digits.slice(7, 9)}`;
-    }
-    // Fallback: just return the normalized version with prefix if it's not empty
-    return digits ? `+998${digits}` : "";
-  }, []);
 
   const openCallLogs = React.useCallback(async () => {
     if (!CallLogs) {
@@ -108,28 +90,14 @@ const PhoneInput = ({
 
   const handleSelectLog = React.useCallback(
     (phoneNumber: string) => {
-      // Normalize to 9-digit local part
-      let digits = phoneNumber.replace(/\D/g, "");
-      if (digits.startsWith("998") && digits.length > 9) {
-        digits = digits.slice(3);
-      }
-      if (digits.length > 9) digits = digits.slice(-9);
-
-      onChange("+998 " + digits);
+      onChange("+998 " + toLocal9(phoneNumber));
       setModalVisible(false);
     },
     [onChange],
   );
 
-  // Derive the local part for the MaskInput (everything after +998 )
-  const localValue = React.useMemo(() => {
-    if (!value) return "";
-    let clean = value.replace(/\D/g, "");
-    if (clean.startsWith("998") && clean.length > 3) {
-      return clean.slice(3);
-    }
-    return clean.length > 9 ? clean.slice(-9) : clean;
-  }, [value]);
+  // MaskInput uchun mahalliy 9 raqam (+998 dan keyingi qism)
+  const localValue = React.useMemo(() => localInputPart(value), [value]);
 
   return (
     <View style={styles.container}>

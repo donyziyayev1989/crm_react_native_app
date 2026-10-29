@@ -2,7 +2,7 @@ import OrderCard from "@/components/OrderCard";
 import { Customer, Order, Product, ProductLot, User } from "@/interfaces";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { formatPhone } from "@utils/format";
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { Pressable, SectionList, StyleSheet, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
@@ -30,6 +30,122 @@ interface OrderListProps {
   ListEmptyComponent?: React.ComponentType<any> | React.ReactElement | null;
   ListFooterComponent?: React.ComponentType<any> | React.ReactElement | null;
 }
+
+interface OrderItemProps {
+  item: Order & { id: string };
+  customer: (Customer & { id: string }) | undefined;
+  productName: string;
+  userName: string;
+  isSelected: boolean;
+  selectable: boolean;
+  toggleSelection: (id: string) => void;
+  onEdit: OrderListProps["onEdit"];
+  onDelete: OrderListProps["onDelete"];
+  onCall: OrderListProps["onCall"];
+  onTelegram: OrderListProps["onTelegram"];
+  onOrderPress?: OrderListProps["onOrderPress"];
+}
+
+// Modul darajasida: komponent ichida yaratilsa har renderda yangi tip bo'lib,
+// memo ishlamaydi va barcha qatorlar qayta mount bo'ladi.
+const OrderItem = React.memo(function OrderItem({
+  item,
+  customer,
+  productName,
+  userName,
+  isSelected,
+  selectable,
+  toggleSelection,
+  onEdit,
+  onDelete,
+  onCall,
+  onTelegram,
+  onOrderPress,
+}: OrderItemProps) {
+  const phone = customer?.phone || "";
+
+  const renderRightPanel = () => (
+    <View className="bg-white flex-col overflow-hidden rounded-r-2xl border-l border-slate-400">
+      <View className="flex-row h-1/2">
+        <Pressable
+          onPress={() => onEdit(item)}
+          className="aspect-square bg-slate-400 flex items-center justify-center"
+        >
+          <MaterialIcons name="edit" size={20} color="white" />
+        </Pressable>
+        <Pressable
+          onPress={() => onDelete(item)}
+          className="aspect-square bg-red-400 flex items-center justify-center"
+        >
+          <MaterialIcons name="delete" size={20} color="white" />
+        </Pressable>
+      </View>
+      <View className="flex-row h-1/2">
+        <Pressable
+          onPress={() => onCall(phone)}
+          className="aspect-square bg-green-400 flex items-center justify-center"
+        >
+          <MaterialIcons name="phone" size={22} color="white" />
+        </Pressable>
+        <Pressable
+          onPress={() =>
+            onTelegram(customer?.telegram_id || phone, undefined, {
+              chatId: customer?.id || "",
+              title: customer?.name || "",
+            })
+          }
+          className="aspect-square bg-blue-400 flex items-center justify-center"
+        >
+          <MaterialIcons name="telegram" size={22} color="white" />
+        </Pressable>
+      </View>
+    </View>
+  );
+
+  return (
+    <View className="mb-3">
+      <View style={styles.itemRow}>
+        {selectable && (
+          <Pressable
+            onPress={() => toggleSelection(item.id)}
+            style={styles.checkboxContainer}
+          >
+            <MaterialIcons
+              name={isSelected ? "check-box" : "check-box-outline-blank"}
+              size={24}
+              color={isSelected ? "#6366f1" : "#9ca3af"}
+            />
+          </Pressable>
+        )}
+        <View style={{ flex: 1 }}>
+          <ReanimatedSwipeable
+            renderRightActions={renderRightPanel}
+            enabled={!selectable}
+          >
+            <Pressable
+              onPress={() => {
+                if (selectable) {
+                  toggleSelection(item.id);
+                } else {
+                  onOrderPress?.(item.id);
+                }
+              }}
+            >
+              <OrderCard
+                item={item}
+                title={customer?.name || "Noma'lum"}
+                subtitle={formatPhone(phone)}
+                productName={productName}
+                className={isSelected ? "bg-indigo-500/10" : ""}
+                userName={userName}
+              />
+            </Pressable>
+          </ReanimatedSwipeable>
+        </View>
+      </View>
+    </View>
+  );
+});
 
 const OrderList: React.FC<OrderListProps> = ({
   orders,
@@ -102,119 +218,17 @@ const OrderList: React.FC<OrderListProps> = ({
       }));
   }, [orders, groupBy, productsMap, lotsMap]);
 
-  // --- Memoized Item Component for Performance ---
-  const MemoizedOrderItem = React.memo(
-    ({
-      item,
-      customer,
-      productName,
-      userName,
-      isSelected,
-      selectable,
-      toggleSelection,
-      onEdit,
-      onDelete,
-      onCall,
-      onTelegram,
-      onOrderPress,
-    }: {
-      item: Order & { id: string };
-      customer: Customer | undefined;
-      productName: string;
-      userName: string;
-      isSelected: boolean;
-      selectable: boolean;
-      toggleSelection: () => void;
-      onEdit: (order: Order & { id: string }) => void;
-      onDelete: (order: Order & { id: string }) => void;
-      onCall: (phone: string) => void;
-      onTelegram: (id: string, msg?: string, data?: any) => void;
-      onOrderPress?: (id: string) => void;
-    }) => {
-      const phone = customer?.phone || "";
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
-      const renderRightPanel = () => (
-        <View className="bg-white flex-col overflow-hidden rounded-r-2xl border-l border-slate-400">
-          <View className="flex-row h-1/2">
-            <Pressable
-              onPress={() => onEdit(item)}
-              className="aspect-square bg-slate-400 flex items-center justify-center"
-            >
-              <MaterialIcons name="edit" size={20} color="white" />
-            </Pressable>
-            <Pressable
-              onPress={() => onDelete(item)}
-              className="aspect-square bg-red-400 flex items-center justify-center"
-            >
-              <MaterialIcons name="delete" size={20} color="white" />
-            </Pressable>
-          </View>
-          <View className="flex-row h-1/2">
-            <Pressable
-              onPress={() => onCall(phone)}
-              className="aspect-square bg-green-400 flex items-center justify-center"
-            >
-              <MaterialIcons name="phone" size={22} color="white" />
-            </Pressable>
-            <Pressable
-              onPress={() =>
-                onTelegram(customer?.telegram_id || phone, undefined, {
-                  chatId: customer?.id || "",
-                  title: customer?.name || "",
-                })
-              }
-              className="aspect-square bg-blue-400 flex items-center justify-center"
-            >
-              <MaterialIcons name="telegram" size={22} color="white" />
-            </Pressable>
-          </View>
-        </View>
-      );
-
-      return (
-        <View className="mb-3">
-          <View style={styles.itemRow}>
-            {selectable && (
-              <Pressable
-                onPress={toggleSelection}
-                style={styles.checkboxContainer}
-              >
-                <MaterialIcons
-                  name={isSelected ? "check-box" : "check-box-outline-blank"}
-                  size={24}
-                  color={isSelected ? "#6366f1" : "#9ca3af"}
-                />
-              </Pressable>
-            )}
-            <View style={{ flex: 1 }}>
-              <ReanimatedSwipeable
-                renderRightActions={renderRightPanel}
-                enabled={!selectable}
-              >
-                <Pressable
-                  onPress={() => {
-                    if (selectable) {
-                      toggleSelection();
-                    } else {
-                      onOrderPress?.(item.id);
-                    }
-                  }}
-                >
-                  <OrderCard
-                    item={item}
-                    title={customer?.name || "Noma'lum"}
-                    subtitle={formatPhone(customer?.phone || "")}
-                    productName={productName}
-                    className={isSelected ? "bg-indigo-500/10" : ""}
-                    userName={userName}
-                  />
-                </Pressable>
-              </ReanimatedSwipeable>
-            </View>
-          </View>
-        </View>
-      );
+  const toggleSelection = useCallback(
+    (id: string) => {
+      if (selectedSet.has(id)) {
+        onSelectionChange?.(selectedIds.filter((x) => x !== id));
+      } else {
+        onSelectionChange?.([...selectedIds, id]);
+      }
     },
+    [selectedIds, selectedSet, onSelectionChange],
   );
 
   return (
@@ -260,33 +274,22 @@ const OrderList: React.FC<OrderListProps> = ({
             </View>
           ) : null
         }
-        renderItem={({ item }) => {
-          const isSelected = selectedIds.includes(item.id);
-          const toggleSelection = () => {
-            if (isSelected) {
-              onSelectionChange?.(selectedIds.filter((id) => id !== item.id));
-            } else {
-              onSelectionChange?.([...selectedIds, item.id]);
-            }
-          };
-
-          return (
-            <MemoizedOrderItem
-              item={item}
-              customer={customersMap[item.customer_id]}
-              productName={productsMap[item.product_id] || "Noma'lum mahsulot"}
-              userName={usersMap[item.user_id] || "Noma'lum"}
-              isSelected={isSelected}
-              selectable={!!selectable}
-              toggleSelection={toggleSelection}
-              onEdit={onEdit}
-              onDelete={onDelete}
-              onCall={onCall}
-              onTelegram={onTelegram}
-              onOrderPress={onOrderPress}
-            />
-          );
-        }}
+        renderItem={({ item }) => (
+          <OrderItem
+            item={item}
+            customer={customersMap[item.customer_id]}
+            productName={productsMap[item.product_id] || "Noma'lum mahsulot"}
+            userName={usersMap[item.user_id] || "Noma'lum"}
+            isSelected={selectedSet.has(item.id)}
+            selectable={!!selectable}
+            toggleSelection={toggleSelection}
+            onEdit={onEdit}
+            onDelete={onDelete}
+            onCall={onCall}
+            onTelegram={onTelegram}
+            onOrderPress={onOrderPress}
+          />
+        )}
       />
     </GestureHandlerRootView>
   );

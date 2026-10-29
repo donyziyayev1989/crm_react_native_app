@@ -180,3 +180,6 @@ export interface InputProps {
     | "phone-pad"
     | "decimal-pad";
 }
+
+/** Firestore'dan kelgan hujjat: id har doim mavjud */
+export type WithId<T> = T & { id: string };

@@ -1,29 +1,17 @@
 import LostProductModal from "@/components/LostProductModal";
+import LotExpenseList from "@/components/LotExpenseList";
 import LotExpenseModal from "@/components/LotExpenseModal";
+import LotLostList from "@/components/LotLostList";
 import OrderList from "@/components/OrderList";
 import OrderModal from "@/components/OrderModal";
-import {
-  Customer,
-  LostProduct,
-  LotExpense,
-  Order,
-  Product,
-  ProductLot,
-  User,
-} from "@/interfaces";
+import { LostProduct, LotExpense, Order, ProductLot, WithId } from "@/interfaces";
+import { useRefData } from "@/providers/ReferenceData";
 import db, { orderBy, where } from "@/services/database";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { callPhone, openTelegram } from "@utils/actions";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
-import {
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import React, { useCallback, useState } from "react";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 
 /**
  * Lot Detail View (Partiya tafsiloti)
@@ -32,12 +20,10 @@ const OrderDetail = () => {
   const { lotId } = useLocalSearchParams<{ lotId: string }>();
   const router = useRouter();
 
-  const [lot, setLot] = useState<(ProductLot & { id: string }) | null>(null);
-  const [orders, setOrders] = useState<(Order & { id: string })[]>([]);
-  const [customers, setCustomers] = useState<(Customer & { id: string })[]>([]);
-  const [products, setProducts] = useState<(Product & { id: string })[]>([]);
-  const [users, setUsers] = useState<(User & { id: string })[]>([]);
-  const [expenses, setExpenses] = useState<(LotExpense & { id: string })[]>([]);
+  const { customers, products, users } = useRefData();
+  const [lot, setLot] = useState<WithId<ProductLot> | null>(null);
+  const [orders, setOrders] = useState<WithId<Order>[]>([]);
+  const [expenses, setExpenses] = useState<WithId<LotExpense>[]>([]);
   const [activeTab, setActiveTab] = useState<"orders" | "expenses" | "lost">(
     "orders",
   );
@@ -61,32 +47,14 @@ const OrderDetail = () => {
   React.useEffect(() => {
     if (!lotId) return;
 
-    const unsubLot = db.lots.watch(
-      (data) => {
-        const found = data.find((l) => l.id === lotId);
-        if (found) setLot(found as ProductLot & { id: string });
-      },
-      where("__name__", "==", lotId),
-    );
+    const unsubLot = db.lots.watchDoc(lotId, setLot);
 
     const unsubOrders = db.orders.watch(
       (data) => {
-        setOrders(data as (Order & { id: string })[]);
+        setOrders(data as WithId<Order>[]);
       },
       where("lotId", "==", lotId),
     );
-
-    const unsubCustomers = db.customers.watch((data) => {
-      setCustomers(data as (Customer & { id: string })[]);
-    });
-
-    const unsubProducts = db.products.watch((data) => {
-      setProducts(data as (Product & { id: string })[]);
-    });
-
-    const unsubUsers = db.users.watch((data) => {
-      setUsers(data as (User & { id: string })[]);
-    });
 
     const unsubExpenses = db.lot_expenses.watch(
       (data) => {
@@ -107,27 +75,23 @@ const OrderDetail = () => {
     return () => {
       unsubLot();
       unsubOrders();
-      unsubCustomers();
-      unsubProducts();
-      unsubUsers();
       unsubExpenses();
       unsubLost();
     };
   }, [lotId]);
 
-  const handleSuccess = (order: Order & { id: string }, isEdit: boolean) => {
-    // Handled by watch()
-  };
-
-  const openMap = (ids?: string[]) => {
-    router.push({
-      pathname: "/lots/[lotId]/map",
-      params: {
-        lotId,
-        selectedIds: ids ? ids.join(",") : "",
-      },
-    });
-  };
+  const openMap = useCallback(
+    (ids?: string[]) => {
+      router.push({
+        pathname: "/lots/[lotId]/map",
+        params: {
+          lotId,
+          selectedIds: ids ? ids.join(",") : "",
+        },
+      });
+    },
+    [router, lotId],
+  );
 
   const handleDelete = (order: Order & { id: string }) => {
     Alert.alert("O'chirish", "Bu buyurtmani o'chirishni xohlaysizmi?", [
@@ -150,15 +114,6 @@ const OrderDetail = () => {
     setEditLine(line);
     setAddLineModal(true);
   };
-
-  const totalExpenses = useMemo(
-    () =>
-      (expenses || []).reduce(
-        (sum: number, item: LotExpense) => sum + (item.total_price || 0),
-        0,
-      ),
-    [expenses],
-  );
 
   const handleOrderPress = useCallback(
     (id: string) => {
@@ -326,172 +281,34 @@ const OrderDetail = () => {
           ListHeaderComponent={renderOrdersHeader}
         />
       ) : activeTab === "expenses" ? (
-        <ScrollView
-          style={{ flex: 1, backgroundColor: "#F2F2F2" }}
-          contentContainerStyle={{ padding: 12 }}
-        >
-          <View style={styles.expenseSummary}>
-            <Text style={styles.summaryLabel}>Jami xarajat:</Text>
-            <Text style={styles.summaryValue}>
-              {totalExpenses.toLocaleString()} so'm
-            </Text>
-          </View>
-
-          <Pressable
-            style={[
-              styles.btn,
-              { backgroundColor: "#10b981", marginBottom: 16 },
-            ]}
-            onPress={() => {
-              setEditExpense(null);
-              setAddExpenseModal(true);
-            }}
-          >
-            <MaterialIcons name="add-circle" size={20} color="#fff" />
-            <Text style={styles.btnText}>Xarajat qo'shish</Text>
-          </Pressable>
-
-          {expenses.length === 0 ? (
-            <View style={styles.empty}>
-              <MaterialIcons name="payments" size={40} color="#d1d5db" />
-              <Text style={styles.emptyText}>Hozircha xarajatlar yo'q</Text>
-            </View>
-          ) : (
-            expenses.map((ex) => (
-              <View key={ex.id} style={styles.expenseItem}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.expenseName}>{ex.name}</Text>
-                  <Text style={styles.expenseDetail}>
-                    {ex.count} ta x {ex.price_per_unit.toLocaleString()} so'm
-                  </Text>
-                </View>
-                <View style={{ alignItems: "flex-end" }}>
-                  <Text style={styles.expenseTotal}>
-                    {ex.total_price.toLocaleString()} so'm
-                  </Text>
-                  <View style={{ flexDirection: "row", gap: 12, marginTop: 4 }}>
-                    <Pressable
-                      onPress={() => {
-                        setEditExpense(ex);
-                        setAddExpenseModal(true);
-                      }}
-                    >
-                      <MaterialIcons name="edit" size={18} color="#6366f1" />
-                    </Pressable>
-                    <Pressable
-                      onPress={() => {
-                        Alert.alert("O'chirish", "O'chirilsinmi?", [
-                          { text: "Yo'q" },
-                          {
-                            text: "Ha",
-                            onPress: async () => {
-                              await db.lot_expenses.delete(ex.id);
-                            },
-                          },
-                        ]);
-                      }}
-                    >
-                      <MaterialIcons name="delete" size={18} color="#ef4444" />
-                    </Pressable>
-                  </View>
-                </View>
-              </View>
-            ))
-          )}
-        </ScrollView>
+        <LotExpenseList
+          expenses={expenses}
+          onAdd={() => {
+            setEditExpense(null);
+            setAddExpenseModal(true);
+          }}
+          onEdit={(ex) => {
+            setEditExpense(ex);
+            setAddExpenseModal(true);
+          }}
+        />
       ) : (
-        <ScrollView
-          style={{ flex: 1, backgroundColor: "#F2F2F2" }}
-          contentContainerStyle={{ padding: 12 }}
-        >
-          <View style={[styles.expenseSummary, { borderColor: "#ef4444" }]}>
-            <Text style={styles.summaryLabel}>Jami yo'qotilgan:</Text>
-            <Text style={[styles.summaryValue, { color: "#ef4444" }]}>
-              {lot?.lost_products || 0} dona
-            </Text>
-          </View>
-
-          <Pressable
-            style={[
-              styles.btn,
-              { backgroundColor: "#ef4444", marginBottom: 16 },
-            ]}
-            onPress={() => {
-              setEditLost(null);
-              setAddLostModal(true);
-            }}
-          >
-            <MaterialIcons name="remove-circle" size={20} color="#fff" />
-            <Text style={styles.btnText}>Yo'qotilgan qo'shish</Text>
-          </Pressable>
-
-          {lost.length === 0 ? (
-            <View style={styles.empty}>
-              <MaterialIcons
-                name="remove-shopping-cart"
-                size={40}
-                color="#d1d5db"
-              />
-              <Text style={styles.emptyText}>Hozircha yo'qotishlar yo'q</Text>
-            </View>
-          ) : (
-            lost.map((ls) => (
-              <View key={ls.id} style={styles.expenseItem}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.expenseName}>{ls.count} dona</Text>
-                  <Text style={styles.expenseDetail}>{ls.date}</Text>
-                </View>
-                <View style={{ alignItems: "flex-end" }}>
-                  <View style={{ flexDirection: "row", gap: 12, marginTop: 4 }}>
-                    <Pressable
-                      onPress={() => {
-                        setEditLost(ls);
-                        setAddLostModal(true);
-                      }}
-                    >
-                      <MaterialIcons name="edit" size={18} color="#6366f1" />
-                    </Pressable>
-                    <Pressable
-                      onPress={() => {
-                        Alert.alert("O'chirish", "O'chirilsinmi?", [
-                          { text: "Yo'q" },
-                          {
-                            text: "Ha",
-                            onPress: async () => {
-                              try {
-                                await db.lost_products.delete(ls.id);
-                                // Recalculate lot total
-                                const newLost = lost.filter(
-                                  (e) => e.id !== ls.id,
-                                );
-                                const newTotal = newLost.reduce(
-                                  (sum, item) => sum + (item.count || 0),
-                                  0,
-                                );
-                                await db.lots.update(lotId as string, {
-                                  lost_products: newTotal,
-                                });
-                              } catch (e) {
-                                Alert.alert(
-                                  "Xato",
-                                  "O'chirishda xatolik yuz berdi",
-                                );
-                              }
-                            },
-                          },
-                        ]);
-                      }}
-                    >
-                      <MaterialIcons name="delete" size={18} color="#ef4444" />
-                    </Pressable>
-                  </View>
-                </View>
-              </View>
-            ))
-          )}
-        </ScrollView>
+        <LotLostList
+          lotId={lotId as string}
+          lot={lot}
+          items={lost}
+          onAdd={() => {
+            setEditLost(null);
+            setAddLostModal(true);
+          }}
+          onEdit={(ls) => {
+            setEditLost(ls);
+            setAddLostModal(true);
+          }}
+        />
       )}
 
+      {/* Ro'yxatlar watch() orqali yangilanadi — onSuccess kerak emas */}
       <OrderModal
         visible={addLineModal}
         onClose={() => {
@@ -500,7 +317,6 @@ const OrderDetail = () => {
         }}
         lotId={lotId as string}
         editLine={editLine}
-        onSuccess={handleSuccess}
       />
 
       <LostProductModal
@@ -512,9 +328,6 @@ const OrderDetail = () => {
         lotId={lotId as string}
         lot={lot}
         editLost={editLost}
-        onSuccess={(newLost, newTotal) => {
-          // Handled by watch()
-        }}
       />
 
       <LotExpenseModal
@@ -523,9 +336,6 @@ const OrderDetail = () => {
         lotId={lotId as string}
         lot={lot}
         editExpense={editExpense}
-        onSuccess={() => {
-          // Handled by watch()
-        }}
       />
     </View>
   );
@@ -535,7 +345,6 @@ export default OrderDetail;
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff" },
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
   empty: { alignItems: "center", paddingVertical: 40, gap: 8 },
   emptyText: { color: "#9ca3af", fontSize: 14 },
   btn: {
@@ -572,30 +381,4 @@ const styles = StyleSheet.create({
     color: "#6366f1",
     fontWeight: "600",
   },
-  expenseSummary: {
-    backgroundColor: "#fff",
-    padding: 16,
-    borderRadius: 12,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-  },
-  summaryLabel: { fontSize: 14, color: "#6b7280", fontWeight: "500" },
-  summaryValue: { fontSize: 18, fontWeight: "700", color: "#6366f1" },
-  expenseItem: {
-    backgroundColor: "#fff",
-    padding: 16,
-    borderRadius: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: "#f3f4f6",
-  },
-  expenseName: { fontSize: 16, fontWeight: "600", color: "#111827" },
-  expenseDetail: { fontSize: 13, color: "#6b7280", marginTop: 2 },
-  expenseTotal: { fontSize: 15, fontWeight: "700", color: "#111827" },
 });

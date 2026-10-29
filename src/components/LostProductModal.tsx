@@ -1,5 +1,7 @@
 import { LostProduct, ProductLot } from "@/interfaces";
-import db, { where } from "@/services/database";
+import db from "@/services/database";
+import { recalcLostTotal } from "@/services/lotStats";
+import { lostPercent } from "@/utils/lots";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
@@ -79,16 +81,7 @@ const LostProductModal: React.FC<LostProductModalProps> = ({
       }
 
       // Partiyadagi umumiy yo'qotishlarni qayta hisoblash
-      // Bu yerda barcha yo'qotilganlarni qayta yig'ib chiqish aniqroq bo'ladi
-      const allLost = await db.lost_products.list(where("lotId", "==", lotId));
-      const newLostTotal = allLost.reduce(
-        (sum, item) => sum + (item.count || 0),
-        0,
-      );
-
-      await db.lots.update(lotId, {
-        lost_products: newLostTotal,
-      });
+      const newLostTotal = await recalcLostTotal(lotId);
 
       if (onSuccess) {
         onSuccess({ id: newId, ...data }, newLostTotal);
@@ -117,13 +110,7 @@ const LostProductModal: React.FC<LostProductModalProps> = ({
         <Text className="text-xl font-bold text-red-500">
           {lot?.lost_products || 0} dona
         </Text>
-        <Text className="ms-2 text-gray-500">
-          ({" "}
-          {lot?.product_count
-            ? (((lot.lost_products || 0) * 100) / lot.product_count).toFixed(1)
-            : 0}{" "}
-          % )
-        </Text>
+        <Text className="ms-2 text-gray-500">( {lostPercent(lot)} % )</Text>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}>

@@ -1,9 +1,10 @@
 import CustomModal from "@/components/CustomModal";
-import { Customer, Order, Product } from "@/interfaces";
+import { Customer, Order, Product, WithId } from "@/interfaces";
 import db from "@/services/database";
 import { Coordinate, MapboxService } from "@/services/mapboxService";
 import { RouteService } from "@/services/routeService";
-import { formatMoney } from "@/utils/format";
+import { formatMoney, formatPhone, formatSum } from "@/utils/format";
+import { digitsOnly } from "@/utils/phone";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import Mapbox, {
   Camera,
@@ -14,7 +15,6 @@ import Mapbox, {
   UserLocation,
 } from "@rnmapbox/maps";
 import { callPhone } from "@utils/actions";
-import { formatPhone } from "@utils/format";
 import { useRouter } from "expo-router";
 import React, {
   useCallback,
@@ -76,6 +76,52 @@ const LotMapView: React.FC<LotMapViewProps> = ({
   const [showToolbar, setShowToolbar] = useState(false);
   const cameraRef = useRef<Camera>(null);
 
+  // ID bo'yicha tez qidirish (ilgari har joyda .find() edi)
+  const ordersById = useMemo(() => {
+    const m: Record<string, WithId<Order>> = {};
+    for (const o of orders) m[o.id] = o;
+    return m;
+  }, [orders]);
+  const customersById = useMemo(() => {
+    const m: Record<string, WithId<Customer>> = {};
+    for (const c of customers) m[c.id] = c;
+    return m;
+  }, [customers]);
+  const productsById = useMemo(() => {
+    const m: Record<string, WithId<Product>> = {};
+    for (const p of products) m[p.id] = p;
+    return m;
+  }, [products]);
+
+  // Lokatsiyalarni qayta hisoblash faqat shu kalit o'zgarganda (har snapshot'da emas)
+  const locationKey = useMemo(
+    () =>
+      orders
+        .map((o) => {
+          const c = customersById[o.customer_id];
+          return [
+            o.id,
+            o.state,
+            o.location?.lat ?? "",
+            o.location?.lng ?? "",
+            c?.location?.lat ?? "",
+            c?.location?.lng ?? "",
+            o.region_name || c?.region_name || "",
+            o.district_name || c?.district_name || "",
+          ].join(":");
+        })
+        .join("|"),
+    [orders, customersById],
+  );
+
+  // Effektlar eng so'nggi ma'lumotni ref orqali oladi, dependency sifatida emas
+  const ordersRef = useRef(ordersById);
+  ordersRef.current = ordersById;
+  const customersRef = useRef(customersById);
+  customersRef.current = customersById;
+  // Bir xil region/district uchun Mapbox geocode faqat bir marta chaqiriladi
+  const geocodeCache = useRef(new Map<string, Coordinate | null>());
+
   // Nearest-neighbor fallback (when Mapbox API fails)
   const nearestNeighborOrder = useCallback(
     (locs: Map<string, Coordinate>, start: Coordinate): string[] => {
@@ -113,7 +159,7 @@ const LotMapView: React.FC<LotMapViewProps> = ({
     ) => {
       const activeLocations = new Map<string, Coordinate>();
       for (const [id, coord] of currentLocations.entries()) {
-        const order = orders.find((o) => o.id === id);
+        const order = ordersRef.current[id];
         if (order && order.state !== "done" && order.state !== "cancel") {
           activeLocations.set(id, coord);
         }
@@ -223,7 +269,7 @@ const LotMapView: React.FC<LotMapViewProps> = ({
         setRouteData(null);
       }
     },
-    [nearestNeighborOrder, orders, customers, setOrderedOrderIds, setRouteData],
+    [nearestNeighborOrder],
   );
 
   // Recalculate route when locations or user coordinates change (only if NOT actively navigating)
@@ -241,11 +287,27 @@ const LotMapView: React.FC<LotMapViewProps> = ({
 
   // Prepare order data with locations
   useEffect(() => {
+    let cancelled = false;
+
+    // Geocode fallback with hierarchy: 1. District+Region, 2. Region — keshlanadi
+    const geocodeCached = async (region?: string, district?: string) => {
+      if (!region) return null;
+      const key = `${region}|${district ?? ""}`;
+      if (geocodeCache.current.has(key)) {
+        return geocodeCache.current.get(key) ?? null;
+      }
+      let coords: Coordinate | null = null;
+      if (district) coords = await MapboxService.geocode(region, district);
+      if (!coords) coords = await MapboxService.geocode(region);
+      geocodeCache.current.set(key, coords);
+      return coords;
+    };
+
     const fetchLocations = async () => {
       setLoading(true);
       const newLocations = new Map<string, Coordinate>();
 
-      for (const order of orders) {
+      for (const order of Object.values(ordersRef.current)) {
         if (order.location) {
           newLocations.set(order.id, {
             latitude: order.location.lat,
@@ -254,39 +316,35 @@ const LotMapView: React.FC<LotMapViewProps> = ({
           continue;
         }
 
-        const customer = customers.find((c) => c.id === order.customer_id);
-        if (customer) {
-          if (customer.location) {
-            newLocations.set(order.id, {
-              latitude: customer.location.lat,
-              longitude: customer.location.lng,
-            });
-          } else {
-            const region = order.region_name || customer.region_name;
-            const district = order.district_name || customer.district_name;
-
-            // Geocode fallback with hierarchy: 1. District+Region, 2. Region
-            let coords = null;
-            if (district && region) {
-              coords = await MapboxService.geocode(region, district);
-            }
-
-            if (!coords && region) {
-              coords = await MapboxService.geocode(region);
-            }
-
-            if (coords) {
-              newLocations.set(order.id, coords);
-            }
-          }
+        const customer = customersRef.current[order.customer_id];
+        if (!customer) continue;
+        if (customer.location) {
+          newLocations.set(order.id, {
+            latitude: customer.location.lat,
+            longitude: customer.location.lng,
+          });
+          continue;
         }
+
+        const coords = await geocodeCached(
+          order.region_name || customer.region_name,
+          order.district_name || customer.district_name,
+        );
+        if (coords) newLocations.set(order.id, coords);
       }
-      setLocations(newLocations);
-      setLoading(false);
+
+      if (!cancelled) {
+        setLocations(newLocations);
+        setLoading(false);
+      }
     };
 
     fetchLocations();
-  }, [orders, customers]);
+    return () => {
+      cancelled = true;
+    };
+    // locationKey orders/customers'ning route'ga ta'sir qiluvchi qismini ifodalaydi
+  }, [locationKey]);
 
   const handleDragEnd = useCallback(async (orderId: string, event: any) => {
     const [longitude, latitude] = event.geometry.coordinates;
@@ -321,7 +379,7 @@ const LotMapView: React.FC<LotMapViewProps> = ({
     // to ensure the shared route is perfectly ordered from where the driver is standing.
     const activeLocations = new Map<string, Coordinate>();
     for (const [id, coord] of locations.entries()) {
-      const order = orders.find((o) => o.id === id);
+      const order = ordersById[id];
       // Skip done/cancel orders
       if (order && order.state !== "done" && order.state !== "cancel") {
         activeLocations.set(id, coord);
@@ -344,14 +402,14 @@ const LotMapView: React.FC<LotMapViewProps> = ({
       if (!coord) return;
       points.push(coord);
 
-      const order = orders.find((o) => o.id === id);
-      const customer = customers.find((c) => c.id === order?.customer_id);
+      const order = ordersById[id];
+      const customer = order ? customersById[order.customer_id] : undefined;
       const name = customer?.name || "Noma'lum";
       const count = order?.product_count ?? 0;
       const region = order?.region_name || customer?.region_name || "";
       const district = order?.district_name || customer?.district_name || "";
-      const product = products.find((p) => p.id === order?.product_id);
-      const phone_number = customer?.phone?.replace(/\s+/g, "");
+      const product = order ? productsById[order.product_id] : undefined;
+      const phone_number = digitsOnly(customer?.phone);
       const total_price =
         (Number(order?.product_price ?? 0) +
           Number(order?.delivery_price ?? 0)) *
@@ -377,7 +435,7 @@ const LotMapView: React.FC<LotMapViewProps> = ({
     } catch (error) {
       Alert.alert("Xato", "Ulashishda xatolik yuz berdi");
     }
-  }, [userCoord, locations, orders, customers, nearestNeighborOrder]);
+  }, [userCoord, locations, ordersById, customersById, productsById, nearestNeighborOrder]);
 
   /** Open Google Maps navigation for a single order stop */
   const handleNavigateToOrder = useCallback(
@@ -457,15 +515,12 @@ const LotMapView: React.FC<LotMapViewProps> = ({
     );
   };
 
-  const selectedCustomer = useMemo(() => {
-    if (!selectedOrder) return null;
-    return customers.find((c) => c.id === selectedOrder.customer_id);
-  }, [selectedOrder, customers]);
-
-  const selectedProduct = useMemo(() => {
-    if (!selectedOrder) return null;
-    return products.find((p) => p.id === selectedOrder.product_id);
-  }, [selectedOrder, products]);
+  const selectedCustomer = selectedOrder
+    ? customersById[selectedOrder.customer_id]
+    : null;
+  const selectedProduct = selectedOrder
+    ? productsById[selectedOrder.product_id]
+    : null;
 
   const routeLayer = useMemo(
     () =>
@@ -489,7 +544,7 @@ const LotMapView: React.FC<LotMapViewProps> = ({
   const markers = useMemo(
     () =>
       Array.from(locations.entries()).map(([orderId, coord]) => {
-        const order = orders.find((o) => o.id === orderId);
+        const order = ordersById[orderId];
         const currentStatus = updatedStatuses[orderId] || order?.state;
 
         let markerColor = "#ef4444"; // Default red
@@ -535,7 +590,7 @@ const LotMapView: React.FC<LotMapViewProps> = ({
     [
       locations,
       orderedOrderIds,
-      orders,
+      ordersById,
       handleDragEnd,
       updatedStatuses,
       isDragMode,
@@ -546,11 +601,11 @@ const LotMapView: React.FC<LotMapViewProps> = ({
   const driverStops = useMemo(() => {
     let sortedList = orderedOrderIds
       .map((id) => {
-        const order = orders.find((o) => o.id === id);
+        const order = ordersById[id];
         // Only include active stops in the panel
         if (!order || order.state === "done" || order.state === "cancel")
           return null;
-        const customer = customers.find((c) => c.id === order.customer_id);
+        const customer = customersById[order.customer_id];
         const coord = locations.get(id);
         return { id, order, customer, coord };
       })
@@ -567,7 +622,7 @@ const LotMapView: React.FC<LotMapViewProps> = ({
     }
 
     return sortedList.map((stop, index) => ({ ...stop, idx: index }));
-  }, [orderedOrderIds, orders, customers, locations, userCoord]);
+  }, [orderedOrderIds, ordersById, customersById, locations, userCoord]);
 
   const focusOnStop = useCallback((coord: Coordinate) => {
     cameraRef.current?.setCamera({
@@ -874,7 +929,7 @@ const LotMapView: React.FC<LotMapViewProps> = ({
                 />
                 <Text style={styles.infoLabel}>Yetkazib berish:</Text>
                 <Text style={styles.infoValue}>
-                  {selectedOrder.delivery_price.toLocaleString()} so'm
+                  {formatSum(selectedOrder.delivery_price)}
                 </Text>
               </View>
             )}
@@ -883,11 +938,10 @@ const LotMapView: React.FC<LotMapViewProps> = ({
               <MaterialIcons name="payments" size={20} color="#f59e0b" />
               <Text style={styles.infoLabel}>Jami buyurtmalar:</Text>
               <Text style={[styles.infoValue, { color: "#ef4444" }]}>
-                {(
+                {formatSum(
                   selectedOrder.product_count * selectedOrder.product_price +
-                  selectedOrder.delivery_price
-                ).toLocaleString()}{" "}
-                so'm
+                    selectedOrder.delivery_price,
+                )}
               </Text>
             </View>
 

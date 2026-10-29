@@ -1,7 +1,6 @@
 import Card from "@/components/Card";
 import db from "@/services/database";
 import {
-  auth,
   federatedGoogleAuthProvider,
   federatedOnAuthStateChanged,
   federatedSignInWithCredential,

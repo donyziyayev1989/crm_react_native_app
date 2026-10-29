@@ -1,15 +1,16 @@
 import Card from "@/components/Card";
+import Loading from "@/components/Loading";
 import OrderCard from "@/components/OrderCard";
 import OrderModal from "@/components/OrderModal";
+import { useRefData } from "@/providers/ReferenceData";
 import db, { where } from "@/services/database";
 import { formatPhone } from "@/utils/format";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { Customer, Order } from "@interfaces/index";
+import { Customer, Order, WithId } from "@interfaces/index";
 import { openTelegram } from "@utils/actions";
 import { router, Stack, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 import {
-  ActivityIndicator,
   FlatList,
   Pressable,
   StyleSheet,
@@ -19,89 +20,40 @@ import {
 
 const CustomerDetail = () => {
   const { customerId } = useLocalSearchParams<{ customerId: string }>();
-  const [customer, setCustomer] = useState<Customer | null>(null);
-  const [orders, setOrders] = useState<(Order & { id: string })[]>([]);
-  const [productsMap, setProductsMap] = useState<
-    Record<string, { name: string; price: number }>
-  >({});
-  const [usersMap, setUsersMap] = useState<Record<string, string>>({});
-  const [lotsMap, setLotsMap] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(true);
+  const { productsById, usersById, lotsById } = useRefData();
+  const [customer, setCustomer] = useState<WithId<Customer> | null>(null);
+  const [customerLoaded, setCustomerLoaded] = useState(false);
+  const [orders, setOrders] = useState<WithId<Order>[]>([]);
+  const [ordersLoaded, setOrdersLoaded] = useState(false);
   const [addLineModal, setAddLineModal] = useState(false);
 
   useEffect(() => {
     if (!customerId) return;
 
-    setLoading(true);
-
-    const unsubCustomer = db.customers.watch(
-      (data) => {
-        const found = data.find((c) => c.id === customerId);
-        if (found) {
-          setCustomer(found);
-        } else {
-          setCustomer(null);
-        }
-      },
-      where("__name__", "==", customerId),
-    );
-
-    const unsubProducts = db.products.watch((data) => {
-      const pMap: Record<string, { name: string; price: number }> = {};
-      data.forEach((p) => {
-        if (p.id) pMap[p.id] = { name: p.name, price: p.price };
-      });
-      setProductsMap(pMap);
+    const unsubCustomer = db.customers.watchDoc(customerId, (doc) => {
+      setCustomer(doc);
+      setCustomerLoaded(true);
     });
 
-    const unsubUsers = db.users.watch((data) => {
-      const uMap: Record<string, string> = {};
-      data.forEach((u) => {
-        if (u.id) uMap[u.id] = u.name;
-      });
-      setUsersMap(uMap);
-    });
-
+    // where + orderBy turli maydonlarda composite index talab qiladi — JS da saralaymiz
     const unsubOrders = db.orders.watch(
-      async (data) => {
-        const sortedOrders = data as (Order & { id: string })[];
-        sortedOrders.sort(
+      (data) => {
+        const sorted = [...(data as WithId<Order>[])].sort(
           (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
         );
-        setOrders(sortedOrders);
-
-        // Partiyalarni (Lots) nomlarini olamiz
-        const uniqueLotIds = [
-          ...new Set(sortedOrders.map((o) => o.lotId).filter(Boolean)),
-        ] as string[];
-        const lots = await Promise.all(
-          uniqueLotIds.map((id) => db.lots.get(id)),
-        );
-        const lMap: Record<string, string> = {};
-        lots.forEach((l) => {
-          if (l?.id) lMap[l.id] = l.name;
-        });
-        setLotsMap(lMap);
-        setLoading(false);
+        setOrders(sorted);
+        setOrdersLoaded(true);
       },
       where("customer_id", "==", customerId),
     );
 
     return () => {
       unsubCustomer();
-      unsubProducts();
-      unsubUsers();
       unsubOrders();
     };
   }, [customerId]);
 
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#6366f1" />
-      </View>
-    );
-  }
+  if (!customerLoaded || !ordersLoaded) return <Loading />;
 
   if (!customer) {
     return (
@@ -222,19 +174,23 @@ const CustomerDetail = () => {
           <Pressable
             onPress={() =>
               router.push({
-                pathname: `/orders/${line.id}`,
-                params: { referral: "customer", customerId: customerId },
+                pathname: "/orders/[orderId]",
+                params: {
+                  orderId: line.id,
+                  referral: "customer",
+                  customerId: customerId,
+                },
               })
             }
             style={styles.lineCard}
           >
             <OrderCard
               item={line}
-              title={lotsMap[line.lotId || ""] || "Partiya aniqlanmadi"}
+              title={lotsById[line.lotId || ""]?.name || "Partiya aniqlanmadi"}
               productName={
-                productsMap[line.product_id]?.name || "Noma'lum mahsulot"
+                productsById[line.product_id]?.name || "Noma'lum mahsulot"
               }
-              userName={usersMap[line.user_id]}
+              userName={usersById[line.user_id]?.name}
             />
           </Pressable>
         )}
@@ -242,30 +198,7 @@ const CustomerDetail = () => {
           <OrderModal
             visible={addLineModal}
             onClose={() => setAddLineModal(false)}
-            onSuccess={async (order: any, isEdit: boolean) => {
-              if (order.lotId && !lotsMap[order.lotId]) {
-                try {
-                  const lotData = await db.lots.get(order.lotId);
-                  if (lotData?.name) {
-                    setLotsMap((prev) => ({
-                      ...prev,
-                      [order.lotId]: lotData.name,
-                    }));
-                  }
-                } catch (err) {
-                  console.error("Failed to fetch lot info", err);
-                }
-              }
-
-              if (isEdit) {
-                setOrders((prev) =>
-                  prev.map((l) => (l.id === order.id ? order : l)),
-                );
-              } else {
-                setOrders((prev) => [order, ...prev]);
-              }
-            }}
-            initialCustomer={customer ? { ...customer, id: customerId } : null}
+            initialCustomer={customer}
           />
         }
       />

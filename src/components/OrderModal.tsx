@@ -1,14 +1,16 @@
 import { auth } from "@/firebase/firebase";
-import {
-  Customer,
-  District,
-  Order,
-  Product,
-  ProductLot,
-  Region,
-} from "@/interfaces";
-import db, { orderBy, where } from "@/services/database";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Customer, Order, WithId } from "@/interfaces";
+import { useRefData } from "@/providers/ReferenceData";
+import db from "@/services/database";
+import { digitsOnly, phonesMatch } from "@/utils/phone";
+import { districtsOfRegion, findDistrictName, findRegion } from "@/utils/regions";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -22,6 +24,7 @@ import {
 import { Rating } from "react-native-ratings";
 import CustomModal from "./CustomModal";
 import PhoneInput from "./PhoneInput";
+import RegionDistrictSelect from "./RegionDistrictSelect";
 import Select from "./Select";
 
 /**
@@ -54,14 +57,6 @@ interface OrderModalProps {
   initialCustomer?: (Customer & { id: string }) | null;
 }
 
-const normalizeStr = (s: string) =>
-  s
-    ? s
-        .trim()
-        .toLowerCase()
-        .replace(/['`‘’ʻʼ]/g, "")
-    : "";
-
 const OrderModal: React.FC<OrderModalProps> = ({
   visible,
   onClose,
@@ -72,123 +67,43 @@ const OrderModal: React.FC<OrderModalProps> = ({
 }) => {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
-  const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
-  const [filteredCustomers, setFilteredCustomers] = useState<
-    (Customer & { id: string })[]
-  >([]);
+  const [filteredCustomers, setFilteredCustomers] = useState<WithId<Customer>[]>(
+    [],
+  );
   const [showSuggestions, setShowSuggestions] = useState(false);
 
-  const [customers, setCustomers] = useState<(Customer & { id: string })[]>([]);
-  const [products, setProducts] = useState<(Product & { id: string })[]>([]);
-  const [regions, setRegions] = useState<(Region & { id: string })[]>([]);
-  const [districts, setDistricts] = useState<(District & { id: string })[]>([]);
-  const [lots, setLots] = useState<(ProductLot & { id: string })[]>([]);
-
-  const fetchDistrictsByRegionName = useCallback(
-    async (regionName: string) => {
-      if (!regionName) {
-        setDistricts([]);
-        return [];
-      }
-      const region = regions.find(
-        (r: Region) => normalizeStr(r.name) === normalizeStr(regionName),
-      );
-      if (region?.id) {
-        // Handle inconsistencies between regions.js IDs and districts.js region_ids in DB
-        const idMap: Record<string, string[]> = {
-          toshkent_sh: ["Toshkent sh.", "Toshkent shahri", "toshkent_sh"],
-          toshkent_v: ["Toshkent vil.", "Toshkent viloyati", "toshkent_v"],
-          fargona: ["Fargona", "Farg'ona", "fargona"],
-          andijon: ["Andijon", "andijon"],
-          buxoro: ["Buxoro", "buxoro"],
-          jizzax: ["Jizzax", "jizzax"],
-          xorazm: ["Xorazm", "xorazm"],
-          namangan: ["Namangan", "namangan"],
-          navoiy: ["Navoiy", "navoiy"],
-          qashqadaryo: ["Qashqadaryo", "qashqadaryo"],
-          qoraqalpogiston: [
-            "Qoraqalpog'iston Respublikasi",
-            "Qoraqalpog'iston",
-            "qoraqalpogiston",
-          ],
-          samarqand: ["Samarqand", "samarqand"],
-          sirdaryo: ["Sirdaryo", "sirdaryo"],
-          surxondaryo: ["Surxondaryo", "surxondaryo"],
-        };
-
-        const possibleIds = idMap[region.id] || [region.id];
-        let ds: (District & { id: string })[] = [];
-
-        for (const pid of possibleIds) {
-          const res = (await db.districts.list(
-            where("regionId", "==", pid),
-            orderBy("name", "asc"),
-          )) as (District & { id: string })[];
-          if (res.length > 0) {
-            ds = res;
-            break;
-          }
-        }
-
-        setDistricts(ds);
-        return ds;
-      }
-      setDistricts([]);
-      return [];
-    },
-    [regions],
-  );
+  // Reference ma'lumotlar ilova darajasidagi provider'dan (modal 6 joyda mount qilinadi)
+  const { customers, products, regions, districts, lots } = useRefData();
 
   const selectCustomer = useCallback(
-    async (customer: Customer & { id: string }) => {
-      let regName = customer.region_name || "";
-      let distName = customer.district_name || "";
+    (customer: WithId<Customer>) => {
+      // Bazadagi nomni ro'yxatdagi rasmiy yozuvga keltiramiz
+      const reg = findRegion(regions, customer.region_name);
+      const regName = reg?.name ?? customer.region_name ?? "";
+      const distName = reg
+        ? findDistrictName(
+            districtsOfRegion(districts, reg.id),
+            customer.district_name,
+          )
+        : (customer.district_name ?? "");
 
-      let regId = "";
-      if (regName) {
-        const reg = regions.find(
-          (r) => normalizeStr(r.name) === normalizeStr(regName),
-        );
-        if (reg) {
-          regId = reg.id!;
-          regName = reg.name; // Use official name from list
-          setSelectedRegionId(regId);
-          const ds = await fetchDistrictsByRegionName(reg.name);
-          // Also try to find official district name
-          if (distName) {
-            const district = ds.find(
-              (d) => normalizeStr(d.name) === normalizeStr(distName),
-            );
-            if (district) distName = district.name; // Use official name
-          }
-        }
-      }
-
-      setForm((f: typeof emptyForm) => ({
+      setForm((f) => ({
         ...f,
-        customer_id: customer.id!,
+        customer_id: customer.id,
         customer_phone: customer.phone,
         customer_name: customer.name,
         region_name: regName || f.region_name,
-        district_name: distName || "",
+        district_name: distName,
       }));
       setShowSuggestions(false);
     },
-    [regions, fetchDistrictsByRegionName],
+    [regions, districts],
   );
 
   const handlePhoneChange = useCallback(
-    async (phone: string) => {
-      // Normalizing phone (get last 9 digits for Uzbekistan matching)
-      const digitsOnly = phone.replace(/\D/g, "");
-
-      if (digitsOnly.length >= 9) {
-        const last9Digits = digitsOnly.slice(-9);
-        const found = customers.find((c: Customer & { id: string }) => {
-          const cDigits = c.phone.replace(/\D/g, "");
-          return cDigits.slice(-9) === last9Digits;
-        });
-
+    (phone: string) => {
+      if (digitsOnly(phone).length >= 9) {
+        const found = customers.find((c) => phonesMatch(c.phone, phone));
         if (found) {
           selectCustomer(found);
           return;
@@ -202,7 +117,7 @@ const OrderModal: React.FC<OrderModalProps> = ({
         customer_id: "",
       }));
     },
-    [customers, regions, fetchDistrictsByRegionName, selectCustomer],
+    [customers, selectCustomer],
   );
 
   const handleNameChange = useCallback(
@@ -221,129 +136,67 @@ const OrderModal: React.FC<OrderModalProps> = ({
     [customers],
   );
 
+  // Modal har ochilganda form faqat BIR marta to'ldiriladi. Aks holda customers/
+  // regions snapshot'lari effektni qayta ishga tushirib, yozilgan ma'lumotni o'chiradi.
+  const initializedRef = useRef(false);
+
   useEffect(() => {
-    if (!visible) return;
-
-    const unsubCustomers = db.customers.watch((data) => {
-      setCustomers(data as (Customer & { id: string })[]);
-    });
-
-    const unsubProducts = db.products.watch((data) => {
-      setProducts(data as (Product & { id: string })[]);
-    });
-
-    const unsubRegions = db.regions.watch((data) => {
-      setRegions(data as (Region & { id: string })[]);
-    });
-
-    const unsubLots = db.lots.watch(
-      (data) => {
-        setLots(data as (ProductLot & { id: string })[]);
-      },
-      orderBy("date", "desc"),
-    );
-
-    return () => {
-      unsubCustomers();
-      unsubProducts();
-      unsubRegions();
-      unsubLots();
-    };
+    if (!visible) initializedRef.current = false;
   }, [visible]);
 
   useEffect(() => {
-    const init = async () => {
-      // Wait for both regions and customers to be loaded for a proper edit initializing
-      if (
-        !visible ||
-        regions.length === 0 ||
-        (editLine && customers.length === 0)
-      )
-        return;
+    // Wait for both regions and customers to be loaded for a proper edit initializing
+    if (
+      !visible ||
+      initializedRef.current ||
+      regions.length === 0 ||
+      (editLine && customers.length === 0)
+    )
+      return;
+    initializedRef.current = true;
 
-      if (editLine) {
-        if (editLine.region_name) {
-          const reg = regions.find(
-            (r) =>
-              r.name.trim().toLowerCase() ===
-              editLine.region_name!.trim().toLowerCase(),
-          );
-          if (reg) {
-            setSelectedRegionId(reg.id!);
-            await fetchDistrictsByRegionName(reg.name);
-          }
-        }
+    // Bazadagi region nomini ro'yxatdagi rasmiy yozuvga keltirish
+    const officialRegion = (name?: string) =>
+      findRegion(regions, name)?.name ?? name ?? "";
 
-        const customer = customers.find(
-          (c: Customer & { id: string }) => c.id === editLine.customer_id,
-        );
-
-        setForm({
-          lotId: editLine.lotId || "",
-          customer_id: editLine.customer_id,
-          customer_phone: customer?.phone || "",
-          customer_name: customer?.name || "",
-          region_name: editLine.region_name || "",
-          district_name: editLine.district_name || "",
-          product_id: editLine.product_id,
-          product_count: String(editLine.product_count),
-          product_price: String(editLine.product_price),
-          rate: String(editLine.rate),
-          state: editLine.state,
-          delivery_price: String(editLine.delivery_price),
-          note: editLine.note || "",
-        });
-      } else if (initialCustomer) {
-        if (initialCustomer.region_name) {
-          const reg = regions.find(
-            (r) =>
-              r.name.trim().toLowerCase() ===
-              initialCustomer.region_name.trim().toLowerCase(),
-          );
-          if (reg) {
-            setSelectedRegionId(reg.id!);
-            await fetchDistrictsByRegionName(reg.name);
-          }
-        }
-        setForm({
-          ...emptyForm,
-          lotId: lotId || "",
-          customer_id: initialCustomer.id || "",
-          customer_phone: initialCustomer.phone || "",
-          customer_name: initialCustomer.name || "",
-          region_name: initialCustomer.region_name || "",
-          district_name: initialCustomer.district_name || "",
-        });
-      } else {
-        setForm({ ...emptyForm, lotId: lotId || "" });
-        setSelectedRegionId(null);
-      }
-    };
-    init();
-  }, [
-    editLine,
-    visible,
-    initialCustomer,
-    lotId,
-    regions,
-    customers,
-    fetchDistrictsByRegionName,
-  ]);
+    if (editLine) {
+      const customer = customers.find((c) => c.id === editLine.customer_id);
+      setForm({
+        lotId: editLine.lotId || "",
+        customer_id: editLine.customer_id,
+        customer_phone: customer?.phone || "",
+        customer_name: customer?.name || "",
+        region_name: officialRegion(editLine.region_name),
+        district_name: editLine.district_name || "",
+        product_id: editLine.product_id,
+        product_count: String(editLine.product_count),
+        product_price: String(editLine.product_price),
+        rate: String(editLine.rate),
+        state: editLine.state,
+        delivery_price: String(editLine.delivery_price),
+        note: editLine.note || "",
+      });
+    } else if (initialCustomer) {
+      setForm({
+        ...emptyForm,
+        lotId: lotId || "",
+        customer_id: initialCustomer.id || "",
+        customer_phone: initialCustomer.phone || "",
+        customer_name: initialCustomer.name || "",
+        region_name: officialRegion(initialCustomer.region_name),
+        district_name: initialCustomer.district_name || "",
+      });
+    } else {
+      setForm({ ...emptyForm, lotId: lotId || "" });
+    }
+  }, [editLine, visible, initialCustomer, lotId, regions, customers]);
 
   const productOptions = useMemo(
-    () => products.map((p: Product) => ({ label: p.name, value: p.id! })),
+    () => products.map((p) => ({ label: p.name, value: p.id })),
     [products],
   );
-  const regionOptions = useMemo(
-    () => regions.map((r: Region) => ({ label: r.name, value: r.id! })),
-    [regions],
-  );
-  const districtOptions = useMemo(
-    () => districts.map((d: District) => ({ label: d.name, value: d.name })),
-    [districts],
-  );
   const lotOptions = useMemo(
-    () => lots.map((o: ProductLot) => ({ label: o.name, value: o.id! })),
+    () => lots.map((o) => ({ label: o.name, value: o.id })),
     [lots],
   );
 
@@ -430,7 +283,7 @@ const OrderModal: React.FC<OrderModalProps> = ({
         );
       }
       onClose();
-    } catch (e) {
+    } catch {
       Alert.alert("Xato", "Saqlashda xatolik yuz berdi");
     } finally {
       setSaving(false);
@@ -512,40 +365,13 @@ const OrderModal: React.FC<OrderModalProps> = ({
                 )}
               </View>
 
-              <Text style={styles.fieldLabel}>Viloyat</Text>
-              <Select
-                data={regionOptions}
-                placeholder="Viloyatni tanlang"
-                searchPlaceholder="Qidirish..."
+              <RegionDistrictSelect
+                regionName={form.region_name}
+                districtName={form.district_name}
+                isInModal
                 search={false}
-                maxHeight={280}
-                value={selectedRegionId}
-                isInModal={true}
-                onChange={async (v: string) => {
-                  const regName = regions.find((r) => r.id === v)?.name || v;
-                  setSelectedRegionId(v);
-                  setForm((f: typeof emptyForm) => ({
-                    ...f,
-                    region_name: regName,
-                    district_name: "",
-                  }));
-                  // Fetch districts for selected region
-                  await fetchDistrictsByRegionName(regName);
-                }}
-              />
-
-              <Text style={styles.fieldLabel}>Tuman</Text>
-              <Select
-                data={districtOptions}
-                placeholder="Tumanni tanlang"
-                searchPlaceholder="Qidirish..."
-                search={false}
-                maxHeight={280}
-                value={form.district_name || null}
-                isInModal={true}
-                onChange={(v: string) =>
-                  setForm((f: typeof emptyForm) => ({ ...f, district_name: v }))
-                }
+                labelStyle={styles.fieldLabel}
+                onChange={(v) => setForm((f) => ({ ...f, ...v }))}
               />
             </>
           )}

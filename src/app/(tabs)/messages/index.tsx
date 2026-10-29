@@ -1,13 +1,15 @@
 import Card from "@/components/Card";
+import Loading from "@/components/Loading";
+import { useRefData } from "@/providers/ReferenceData";
 import db, { orderBy } from "@/services/database";
 import { chatEvents } from "@/utils/chat_events";
-import { formatPhone } from "@/utils/format";
+import { formatPhone, formatTime } from "@/utils/format";
+import { digitsOnly } from "@/utils/phone";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { Customer, Lead, LeadChat } from "@interfaces/index";
+import { Lead, LeadChat } from "@interfaces/index";
 import { Stack } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   FlatList,
   Pressable,
   StyleSheet,
@@ -19,7 +21,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 const Messages = () => {
   const [chats, setChats] = useState<LeadChat[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
+  const { customers } = useRefData();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -34,15 +36,11 @@ const Messages = () => {
       orderBy("last_timestamp", "desc"),
     );
 
-    // 2. Customers watch (for names)
-    const unsubCustomers = db.customers.watch(setCustomers);
-
-    // 3. Leads watch (for names)
+    // 2. Leads watch (for names)
     const unsubLeads = db.leads.watch(setLeads);
 
     return () => {
       unsubChats();
-      unsubCustomers();
       unsubLeads();
     };
   }, []);
@@ -80,9 +78,7 @@ const Messages = () => {
       if (!target) return false;
 
       const nameMatch = target.name.toLowerCase().includes(query);
-      const phoneMatch = target.phone
-        .replace(/\D/g, "")
-        .includes(query.replace(/\D/g, ""));
+      const phoneMatch = digitsOnly(target.phone).includes(digitsOnly(query));
       const originalPhoneMatch = target.phone.includes(query);
 
       return nameMatch || phoneMatch || originalPhoneMatch;
@@ -139,12 +135,7 @@ const Messages = () => {
             </View>
             <View className="items-end">
               <Text className="text-sm text-muted">
-                {item.last_timestamp
-                  ? new Date(item.last_timestamp).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })
-                  : ""}
+                {formatTime(item.last_timestamp)}
               </Text>
               {hasUnread && (
                 <View className="bg-red-500 rounded-full px-2 py-1 mt-3">
@@ -164,9 +155,7 @@ const Messages = () => {
     <SafeAreaView style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
       {loading ? (
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color="#3b82f6" />
-        </View>
+        <Loading color="#3b82f6" />
       ) : (
         <View style={{ flex: 1 }}>
           <View style={styles.searchContainer}>

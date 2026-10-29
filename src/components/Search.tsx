@@ -1,8 +1,8 @@
 import Select from "@/components/Select";
-import db from "@/services/database";
+import { useRefData } from "@/providers/ReferenceData";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Pressable, TextInput, View } from "react-native";
 
 /**
@@ -10,9 +10,13 @@ import { Pressable, TextInput, View } from "react-native";
  */
 const Search = ({ initialValue = "" }: { initialValue?: string }) => {
   const [val, setVal] = useState(initialValue);
-  const [allLots, setAllLots] = useState<any[]>([]);
-  const [allRegions, setAllRegions] = useState<any[]>([]);
-  const [allTags, setAllTags] = useState<any[]>([]);
+  const { lots, regions, tags } = useRefData();
+  const allLots = useMemo(() => lots.map((l) => ({ label: l.name, value: l.id })), [lots]);
+  const allRegions = useMemo(
+    () => regions.map((r) => ({ label: r.name, value: r.name })),
+    [regions],
+  );
+  const allTags = useMemo(() => tags.map((t) => ({ label: t.name, value: t.id })), [tags]);
   const [lotId, setLotId] = useState<string>("");
   const [region, setRegion] = useState<string>("");
   const [tagId, setTagId] = useState<string>("");
@@ -40,42 +44,6 @@ const Search = ({ initialValue = "" }: { initialValue?: string }) => {
       params,
     });
   };
-
-  useEffect(() => {
-    // Partiyalarni (Lots) real-time kuzatish
-    const unsubLots = db.lots.watch((data) => {
-      const lotsData = data.map((lot: any) => ({
-        label: lot.name,
-        value: lot.id,
-        date: lot.date,
-      }));
-      setAllLots(lotsData);
-    });
-
-    // Viloyatlarni real-time kuzatish
-    const unsubRegions = db.regions.watch((data) => {
-      const regionsData = data.map((region: any) => ({
-        label: region.name,
-        value: region.name,
-      }));
-      setAllRegions(regionsData);
-    });
-
-    // Teglarni real-time kuzatish
-    const unsubTags = db.tags.watch((data) => {
-      const tagsData = data.map((tag: any) => ({
-        label: tag.name,
-        value: tag.id,
-      }));
-      setAllTags(tagsData);
-    });
-
-    return () => {
-      unsubLots();
-      unsubRegions();
-      unsubTags();
-    };
-  }, []);
 
   return (
     <>

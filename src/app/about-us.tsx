@@ -1,4 +1,5 @@
 import Card from "@/components/Card";
+import Loading from "@/components/Loading";
 import db from "@/services/database";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Link, Stack } from "expo-router";
@@ -20,14 +21,12 @@ export default function AboutUsScreen() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = db.settings.watch((data) => {
-      const aboutUs = data.find((d) => d.id === "about_us");
-      if (aboutUs) {
-        setText(aboutUs.text || "");
-      }
-      setLoading(false);
-    });
-    return () => unsubscribe();
+    // Bitta hujjat — butun settings kolleksiyasini kuzatish shart emas
+    db.settings
+      .get("about_us")
+      .then((doc) => setText(doc?.text || ""))
+      .catch(console.error)
+      .finally(() => setLoading(false));
   }, []);
 
   const handleSave = async () => {
@@ -50,13 +49,7 @@ export default function AboutUsScreen() {
     }
   };
 
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#10b981" />
-      </View>
-    );
-  }
+  if (loading) return <Loading color="#10b981" />;
 
   return (
     <>

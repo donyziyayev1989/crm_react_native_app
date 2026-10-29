@@ -37,7 +37,7 @@ export const MapboxService = {
         return { latitude: lat, longitude: lng };
       }
       return null;
-    } catch (error) {
+    } catch {
       return null;
     }
   },

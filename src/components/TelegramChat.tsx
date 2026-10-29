@@ -1,6 +1,8 @@
 import { auth } from "@/firebase/firebase";
 import { LeadMessage, User } from "@/interfaces";
-import db, { orderBy, where } from "@/services/database";
+import { useRefData } from "@/providers/ReferenceData";
+import db, { orderBy } from "@/services/database";
+import { formatDateLabel, formatTime } from "@/utils/format";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { openTelegram as openTelegramUtil } from "@utils/actions";
 import { useRouter } from "expo-router";
@@ -37,15 +39,18 @@ const TelegramChat = ({
 }: TelegramChatProps) => {
   const router = useRouter();
   const [history, setHistory] = useState<LeadMessage[]>([]);
-  const [users, setUsers] = useState<Record<string, User>>({});
+  const { usersById: users, customersById, loading: refLoading } = useRefData();
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
-  const [isCustomer, setIsCustomer] = useState<boolean | null>(null);
+  // Provider yuklanmaguncha noma'lum (null); keyin customers'da bormi-yo'qmi
+  const isCustomer: boolean | null = refLoading ? null : !!customersById[chatId];
   const scrollViewRef = useRef<ScrollView>(null);
+  const lastSeenMsgIdRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     if (!chatId) return;
+    lastSeenMsgIdRef.current = undefined;
 
     // Reset unread count when chat is opened
     db.lead_chats
@@ -57,9 +62,15 @@ const TelegramChat = ({
       (msgs) => {
         setHistory(msgs);
 
-        // Oxirgi xabar mijozdan bo'lsa unread_count ni 0 qilish
+        // Yangi xabar mijozdan kelsa unread_count ni 0 qilish.
+        // Har bir snapshot emas, faqat oxirgi xabar o'zgarganda yozamiz.
         const lastMsg = msgs[msgs.length - 1];
-        if (lastMsg && lastMsg.sender === "customer") {
+        if (
+          lastMsg &&
+          lastMsg.sender === "customer" &&
+          lastMsg.id !== lastSeenMsgIdRef.current
+        ) {
+          lastSeenMsgIdRef.current = lastMsg.id;
           db.lead_chats
             .set(chatId, { unread_count: 0, lead_id: chatId })
             .catch(console.error);
@@ -73,30 +84,6 @@ const TelegramChat = ({
     );
 
     return () => unsubscribe();
-  }, [chatId]);
-
-  useEffect(() => {
-    // Fetch users for avatars
-    const unsubUsers = db.users.watch((allUsers) => {
-      const usersMap: Record<string, User> = {};
-      allUsers.forEach((u) => {
-        if (u.id) usersMap[u.id] = u;
-      });
-      setUsers(usersMap);
-    });
-    return () => unsubUsers();
-  }, []);
-
-  useEffect(() => {
-    if (!chatId) return;
-    const unsub = db.customers.watch(
-      (data) => {
-        const found = data.find((c) => c.id === chatId);
-        setIsCustomer(!!found);
-      },
-      where("__name__", "==", chatId),
-    );
-    return () => unsub();
   }, [chatId]);
 
   const handleSendMessage = async () => {
@@ -132,51 +119,11 @@ const TelegramChat = ({
       setTimeout(() => {
         scrollViewRef.current?.scrollToEnd({ animated: true });
       }, 100);
-    } catch (e) {
+    } catch {
       Alert.alert("Xato", "Xabar yuborishda xatolik yuz berdi");
     } finally {
       setSending(false);
     }
-  };
-
-  const formatDateLabel = (dateStr: string) => {
-    const date = new Date(dateStr);
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-
-    const messageDate = new Date(
-      date.getFullYear(),
-      date.getMonth(),
-      date.getDate(),
-    );
-
-    if (messageDate.getTime() === today.getTime()) return "Bugun";
-    if (messageDate.getTime() === yesterday.getTime()) return "Kecha";
-
-    const uzMonths = [
-      "yanvar",
-      "fevral",
-      "mart",
-      "aprel",
-      "may",
-      "iyun",
-      "iyul",
-      "avgust",
-      "sentabr",
-      "oktabr",
-      "noyabr",
-      "dekabr",
-    ];
-
-    const day = date.getDate();
-    const month = uzMonths[date.getMonth()];
-    const year = date.getFullYear();
-
-    return year !== now.getFullYear()
-      ? `${day} ${month} ${year}`
-      : `${day} ${month}`;
   };
 
   return (
@@ -311,10 +258,7 @@ const TelegramChat = ({
                           : styles.theirTime,
                       ]}
                     >
-                      {new Date(msg.timestamp).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
+                      {formatTime(msg.timestamp)}
                     </Text>
                   </View>
                 </View>

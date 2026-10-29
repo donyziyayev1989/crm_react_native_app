@@ -14,7 +14,8 @@ import {
   LeadMessage,
   FAQ,  
   User,
-  LotExpense
+  LotExpense,
+  WithId,
 } from "@interfaces/index";
 import * as jsFirestore from "firebase/firestore";
 import { Platform } from "react-native";
@@ -26,6 +27,10 @@ const isWeb = Platform.OS === 'web';
 
 // Har ikkala SDK funksiyalarini bitta ob'ektga yig'amiz
 const f: any = isWeb ? jsFirestore : nativeFirestore;
+
+// Web va native v23 da ham exists() metod. Eski native versiyalarda xususiyat edi.
+const snapExists = (snap: any): boolean =>
+  typeof snap.exists === "function" ? snap.exists() : !!snap.exists;
 
 // ─── Query Constraints ──────────────────────────────────────────────────────
 export const where = f.where;
@@ -57,9 +62,7 @@ function createCollection<T>(
     get: async (id: string): Promise<T | null> => {
       const docRef = f.doc(database as any, collectionName, id);
       const docSnap = await f.getDoc(docRef);
-      // Native v23 check exists via .exists, Web via .exists()
-      const exists = isWeb ? docSnap.exists() : (docSnap as any).exists;
-      if (!exists) return null;
+      if (!snapExists(docSnap)) return null;
       return { id: docSnap.id, ...docSnap.data() } as T;
     },
 
@@ -90,8 +93,34 @@ function createCollection<T>(
         const data = snapshot.docs.map((d: any) => ({ id: d.id, ...d.data() }) as T);
         callback(data);
       }, (error: any) => {
+        // Xato (masalan permission-denied) bo'lsa ham callback chaqiriladi —
+        // aks holda ekranlar abadiy "loading" da qoladi.
         console.error(`Error watching ${collectionName}:`, error);
+        callback([]);
       });
+    },
+
+    watchDoc: (id: string, callback: (data: WithId<T> | null) => void) => {
+      const ref = f.doc(database as any, collectionName, id);
+      return f.onSnapshot(
+        ref,
+        (snap: any) => {
+          callback(
+            snapExists(snap) ? ({ id: snap.id, ...snap.data() } as WithId<T>) : null,
+          );
+        },
+        (error: any) => {
+          console.error(`Error watching ${collectionName}/${id}:`, error);
+          callback(null);
+        },
+      );
+    },
+
+    sum: async (field: string, ...constraints: any[]): Promise<number> => {
+      const colRef = getColRef();
+      const q = constraints.length > 0 ? f.query(colRef, ...constraints) : colRef;
+      const snap = await f.getAggregateFromServer(q, { total: f.sum(field) });
+      return Number(snap.data().total) || 0;
     },
   };
 }
@@ -118,8 +147,7 @@ function createSubCollection<T>(
       get: async (id: string): Promise<T | null> => {
         const docRef = f.doc(database as any, path, id);
         const docSnap = await f.getDoc(docRef);
-        const exists = isWeb ? docSnap.exists() : (docSnap as any).exists;
-        if (!exists) return null;
+        if (!snapExists(docSnap)) return null;
         return { id: docSnap.id, ...docSnap.data() } as T;
       },
       create: async (data: Omit<T, "id">): Promise<string> => {
@@ -146,7 +174,29 @@ function createSubCollection<T>(
           callback(data);
         }, (err: any) => {
           console.error(`Error watching ${path}:`, err);
+          callback([]);
         });
+      },
+      watchDoc: (id: string, callback: (data: WithId<T> | null) => void) => {
+        const ref = f.doc(database as any, path, id);
+        return f.onSnapshot(
+          ref,
+          (snap: any) => {
+            callback(
+              snapExists(snap) ? ({ id: snap.id, ...snap.data() } as WithId<T>) : null,
+            );
+          },
+          (err: any) => {
+            console.error(`Error watching ${path}/${id}:`, err);
+            callback(null);
+          },
+        );
+      },
+      sum: async (field: string, ...constraints: any[]): Promise<number> => {
+        const colRef = getSubColRef();
+        const q = constraints.length > 0 ? f.query(colRef, ...constraints) : colRef;
+        const snap = await f.getAggregateFromServer(q, { total: f.sum(field) });
+        return Number(snap.data().total) || 0;
       },
     };
   };
@@ -185,4 +235,6 @@ export interface CollectionMethods<T> {
   delete: (id: string) => Promise<void>;
   set: (id: string, data: Partial<T>) => Promise<void>;
   watch: (callback: (data: T[]) => void, ...constraints: any[]) => () => void;
+  watchDoc: (id: string, callback: (data: WithId<T> | null) => void) => () => void;
+  sum: (field: string, ...constraints: any[]) => Promise<number>;
 }

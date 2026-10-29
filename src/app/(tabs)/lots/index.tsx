@@ -1,94 +1,53 @@
 import Card from "@/components/Card";
-import { Order, ProductLot } from "@/interfaces";
-import db, { orderBy } from "@/services/database";
+import Loading from "@/components/Loading";
+import { useSwipeableRows } from "@/hooks/useSwipeableRows";
+import { useRefData } from "@/providers/ReferenceData";
+import db, { where } from "@/services/database";
 import { formatDate } from "@/utils/format";
+import { lostPercent } from "@/utils/lots";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { Stack, useRouter } from "expo-router";
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  Pressable,
-  Text,
-  View,
-} from "react-native";
+import { Stack, useFocusEffect, useRouter } from "expo-router";
+import React, { useCallback, useMemo, useState } from "react";
+import { FlatList, Pressable, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 
 const Lots = () => {
-  const [lots, setLots] = useState<(ProductLot & { id: string })[]>([]);
-  const [orders, setOrders] = useState<(Order & { id: string })[]>([]);
+  const { lots, loading } = useRefData();
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
+  const { closeRow, registerRow } = useSwipeableRows();
+  const [orderCounts, setOrderCounts] = useState<Record<string, number>>({});
 
-  const rowRefs = useRef(new Map<string, any>());
-  const prevOpenedRow = useRef<string | null>(null);
+  // Har lot uchun bitta aggregate read (sum). Ilgari BARCHA orders watch qilinardi.
+  // Eslatma: product_count string bo'lib saqlangan hujjatlar sum ga kirmaydi.
+  // Faqat focus'da va lotlar TO'PLAMI o'zgarganda qayta so'raladi (har snapshot'da emas).
+  const lotIdsKey = useMemo(() => lots.map((l) => l.id).join(","), [lots]);
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      const ids = lotIdsKey ? lotIdsKey.split(",") : [];
+      Promise.all(
+        ids.map(async (id) => {
+          const total = await db.orders
+            .sum("product_count", where("lotId", "==", id))
+            .catch(() => 0);
+          return [id, total] as const;
+        }),
+      ).then((entries) => {
+        if (!cancelled) setOrderCounts(Object.fromEntries(entries));
+      });
+      return () => {
+        cancelled = true;
+      };
+    }, [lotIdsKey]),
+  );
 
-  const closeRow = (id: string) => {
-    if (prevOpenedRow.current !== null && prevOpenedRow.current !== id) {
-      const row = rowRefs.current.get(prevOpenedRow.current);
-      if (row) row.close();
-    }
-    prevOpenedRow.current = id;
-  };
+  const enrichedLots = useMemo(
+    () => lots.map((lot) => ({ ...lot, order_count: orderCounts[lot.id] ?? 0 })),
+    [lots, orderCounts],
+  );
 
-  useEffect(() => {
-    const unsubLots = db.lots.watch(
-      (data) => {
-        setLots(data as (ProductLot & { id: string })[]);
-        setLoading(false);
-      },
-      orderBy("date", "desc"),
-    );
-
-    const unsubOrders = db.orders.watch((data) => {
-      setOrders(data as (Order & { id: string })[]);
-    });
-
-    return () => {
-      unsubLots();
-      unsubOrders();
-    };
-  }, []);
-
-  const enrichedLots = useMemo(() => {
-    const counts = orders.reduce(
-      (acc, order) => {
-        if (order.lotId) {
-          acc[order.lotId] =
-            (acc[order.lotId] || 0) + (order.product_count || 0);
-        }
-        return acc;
-      },
-      {} as Record<string, number>,
-    );
-
-    return lots.map((lot) => ({
-      ...lot,
-      order_count: counts[lot.id] || 0,
-    }));
-  }, [lots, orders]);
-
-  const handleDelete = (id: string) => {
-    Alert.alert("O'chirish", "Haqiqatan ham bu partiyani o'chirmoqchimisiz?", [
-      { text: "Bekor qilish", style: "cancel" },
-      {
-        text: "O'chirish",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            setLots((prev) => prev.filter((o) => o.id !== id));
-            await db.lots.delete(id);
-          } catch (error) {
-            Alert.alert("Xato", "Partiyani o'chirishda xatolik yuz berdi");
-          }
-        },
-      },
-    ]);
-  };
-
-  const renderRightPanel = (item: ProductLot & { id: string }) => {
+  const renderRightPanel = (item: { id: string }) => {
     return (
       <View className="flex-row z-50">
         <Pressable
@@ -119,13 +78,7 @@ const Lots = () => {
     );
   };
 
-  if (loading) {
-    return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator size="large" color="#6366f1" />
-      </View>
-    );
-  }
+  if (loading) return <Loading />;
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -164,12 +117,7 @@ const Lots = () => {
           renderItem={({ item }) => (
             <View className="bg-white rounded-2xl overflow-hidden shadow-sm shadow-slate-400/30">
               <ReanimatedSwipeable
-                ref={
-                  ((ref: any) => {
-                    if (ref) rowRefs.current.set(item.id, ref);
-                    else rowRefs.current.delete(item.id);
-                  }) as any
-                }
+                ref={registerRow(item.id)}
                 onSwipeableWillOpen={() => closeRow(item.id)}
                 renderRightActions={() => renderRightPanel(item)}
               >
@@ -220,14 +168,7 @@ const Lots = () => {
                         <Text className="text-sm text-gray-600">
                           Yo'qotilgan:{" "}
                           <Text className="font-semibold text-red-500">
-                            {item.lost_products || 0} ({" "}
-                            {item.product_count
-                              ? (
-                                  ((item.lost_products || 0) * 100) /
-                                  item.product_count
-                                ).toFixed(1)
-                              : 0}
-                            % )
+                            {item.lost_products || 0} ( {lostPercent(item)}% )
                           </Text>
                         </Text>
                       </View>
@@ -259,7 +200,7 @@ const Lots = () => {
                             className={`font-semibold ${
                               item.order_count -
                                 item.product_count +
-                                item.lost_products >
+                                (item.lost_products || 0) >
                               0
                                 ? "text-red-500"
                                 : "text-gray-800"

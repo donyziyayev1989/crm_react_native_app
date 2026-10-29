@@ -2,11 +2,7 @@ import { Alert, Linking, Platform } from "react-native";
 import { chatEvents } from "./chat_events";
 
 export const callPhone = async (phone: string) => {
-  let cleaned = phone.replace(/\D/g, "");
-  if (!cleaned.startsWith("+")) {
-    cleaned = "+" + cleaned;
-  }
-  const url = `tel:${cleaned}`;
+  const url = `tel:+${phone.replace(/\D/g, "")}`;
 
   if (Platform.OS === "web") {
     window.location.href = url;
@@ -98,7 +94,7 @@ export const openTelegram = async (
     } else {
       await Linking.openURL(url);
     }
-  } catch (err) {
+  } catch {
     Alert.alert("Xatolik", "Telegram bilan bog'lanishda xatolik yuz berdi");
   }
 };

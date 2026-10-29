@@ -1,12 +1,15 @@
 import Input from "@/components/Input";
 import PhoneInput from "@/components/PhoneInput";
+import RegionDistrictSelect from "@/components/RegionDistrictSelect";
 import Select from "@/components/Select";
 import { auth } from "@/firebase/firebase";
+import { useRefData } from "@/providers/ReferenceData";
 import db, { where } from "@/services/database";
 import { formatPhone } from "@/utils/format";
-import { Customer, District, ProductLot, Region } from "@interfaces/index";
+import { digitsOnly, phoneVariants } from "@/utils/phone";
+import { Customer } from "@interfaces/index";
 import { useRouter } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import { Controller, useForm } from "react-hook-form";
 import {
   Alert,
@@ -36,82 +39,11 @@ const CustomerForm = ({
   isInModal,
 }: CustomerFormProps) => {
   const router = useRouter();
-  const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
 
-  // ─── Data States ──────────────────────────────────────────────────────────
-  const [regionsData, setRegionsData] = useState<(Region & { id: string })[]>(
-    [],
-  );
-  const [districtsData, setDistrictsData] = useState<District[]>([]);
-  const [lotsData, setLotsData] = useState<(ProductLot & { id: string })[]>([]);
-  const [tagsData, setTagsData] = useState<{ name: string; id: string }[]>([]);
-
-  // ─── Realtime Subscriptions ───────────────────────────────────────────────
-  useEffect(() => {
-    // Regions
-    const unsubRegions = db.regions.watch(setRegionsData as any);
-    // Lots
-    const unsubLots = db.lots.watch(setLotsData as any);
-    // Tags
-    const unsubTags = db.tags.watch(setTagsData as any);
-
-    return () => {
-      unsubRegions();
-      unsubLots();
-      unsubTags();
-    };
-  }, []);
-
-  // Districts subscription (Filtered by region)
-  useEffect(() => {
-    if (selectedRegionId) {
-      const unsubDistricts = db.districts.watch(
-        setDistrictsData as any,
-        where("regionId", "==", selectedRegionId),
-      );
-      return unsubDistricts;
-    } else {
-      setDistrictsData([]);
-    }
-  }, [selectedRegionId]);
-
-  // Viloyatlar yuklanganda yoki initialData o'zgarganda ID ni aniqlash
-  useEffect(() => {
-    if (regionsData.length > 0 && initialData?.region_name) {
-      const val = initialData.region_name.trim();
-      const normalize = (s: string) => s.toLowerCase().replace(/['` ]/g, "");
-      const normalizedValue = normalize(val);
-
-      let found = regionsData.find(
-        (d) => d.id === val || normalize(d.name || "") === normalizedValue,
-      );
-
-      // Qo'shimcha fuzzy matching (ayniqsa Toshkent uchun)
-      if (!found && normalizedValue === "toshkent") {
-        found = regionsData.find((d) => d.id === "toshkent_sh");
-      }
-
-      if (found) {
-        setSelectedRegionId(found.id!);
-      }
-    }
-  }, [regionsData, initialData?.region_name]);
+  // Reference ma'lumotlar ilova darajasidagi provider'dan
+  const { lots: lotsData, tags: tagsData } = useRefData();
 
   // ─── Select options ───────────────────────────────────────────────────────
-  const regions = useMemo(
-    () =>
-      (regionsData ?? []).map((d) => ({
-        label: d.name,
-        value: d.id,
-      })),
-    [regionsData],
-  );
-
-  const districts = useMemo(
-    () => (districtsData ?? []).map((d) => ({ label: d.name, value: d.name })),
-    [districtsData],
-  );
-
   const lots = useMemo(
     () =>
       (lotsData ?? []).map((d) => ({
@@ -134,6 +66,7 @@ const CustomerForm = ({
     control,
     handleSubmit,
     setValue,
+    watch,
     formState: { errors },
   } = useForm<Customer>({
     defaultValues: {
@@ -154,23 +87,12 @@ const CustomerForm = ({
     try {
       const cleanedData = {
         ...data,
-        phone: data.phone.replace(/\D/g, ""),
+        phone: digitsOnly(data.phone),
       };
 
-      // Dublikatni tekshirish (Bir nechta formatda qidiramiz)
-      const digits = cleanedData.phone;
-      const phoneQueries = [digits];
-      if (digits.length === 9) {
-        phoneQueries.push(`+998 ${digits}`);
-        phoneQueries.push("998" + digits);
-      } else if (digits.length === 12 && digits.startsWith("998")) {
-        phoneQueries.push(`+998 ${digits.slice(3)}`);
-        phoneQueries.push(digits.slice(3));
-      }
-      
-      const uniqueQueries = [...new Set(phoneQueries)];
+      // Dublikatni tekshirish (bazadagi barcha yozuv variantlari bo'yicha)
       const existingCustomers = await db.customers.list(
-        where("phone", "in", uniqueQueries),
+        where("phone", "in", phoneVariants(cleanedData.phone)),
       );
       const duplicate = existingCustomers.find((c) => c.id !== initialData?.id);
 
@@ -286,85 +208,27 @@ const CustomerForm = ({
           )}
         </View>
 
-        {/* Region */}
-        <View style={styles.fieldGroup}>
-          <Text style={[styles.label, errors.region_name && styles.errorLabel]}>
-            Viloyat
-          </Text>
-          <Controller
-            control={control}
-            name="region_name"
-            rules={{ required: "Viloyat kiritilishi shart" }}
-            render={({ field: { onChange, value } }) => {
-              // Formadagi nomga qarab Select uchun ID ni aniqlaymiz
-              const normalize = (s: string) =>
-                s.toLowerCase().replace(/['` ]/g, "");
-              const normalizedValue = normalize(value || "");
-              let foundDoc = (regionsData ?? []).find(
-                (d) =>
-                  d.id === value || normalize(d.name || "") === normalizedValue,
-              );
-
-              // Toshkent uchun fuzzy match
-              if (!foundDoc && normalizedValue === "toshkent") {
-                foundDoc = (regionsData ?? []).find(
-                  (d) => d.id === "toshkent_sh",
-                );
-              }
-
-              const currentId = foundDoc?.id || "";
-
-              return (
-                <Select
-                  data={regions}
-                  placeholder="Viloyatni tanlang"
-                  searchPlaceholder="Qidirish..."
-                  value={currentId || selectedRegionId}
-                  errors={errors}
-                  isInModal={isInModal}
-                  onChange={(val) => {
-                    setSelectedRegionId(val);
-                    // Formada ID emas, nomini saqlaymiz (Lead va CRM mosligi uchun)
-                    const regionName =
-                      regions.find((r) => r.value === val)?.label || val;
-                    onChange(regionName);
-                    setValue("district_name", ""); // region o'zgarganda tuman resetlanadi
-                  }}
-                  search={true}
-                  maxHeight={300}
-                />
-              );
-            }}
-          />
-          {errors.region_name && (
-            <Text style={styles.errorText}>
-              {errors.region_name.message as string}
-            </Text>
+        {/* Region + District (formada ID emas, nom saqlanadi) */}
+        <Controller
+          control={control}
+          name="region_name"
+          rules={{ required: "Viloyat kiritilishi shart" }}
+          render={({ field: { onChange, value } }) => (
+            <RegionDistrictSelect
+              regionName={value || ""}
+              districtName={watch("district_name") || ""}
+              isInModal={isInModal}
+              labelStyle={styles.label}
+              fieldStyle={styles.fieldGroup}
+              errorTextStyle={styles.errorText}
+              regionError={errors.region_name?.message as string | undefined}
+              onChange={({ region_name, district_name }) => {
+                onChange(region_name);
+                setValue("district_name", district_name);
+              }}
+            />
           )}
-        </View>
-
-        {/* District */}
-        <View style={styles.fieldGroup}>
-          <Text style={styles.label}>Tuman</Text>
-          <Controller
-            control={control}
-            name="district_name"
-            render={({ field: { onChange, value } }) => (
-              <Select
-                data={districts}
-                placeholder="Tumanni tanlang"
-                searchPlaceholder="Qidirish..."
-                search={true}
-                maxHeight={300}
-                value={value}
-                isInModal={isInModal}
-                onChange={(val) => {
-                  onChange(val);
-                }}
-              />
-            )}
-          />
-        </View>
+        />
 
         {/* Lots (Partiyalar) */}
         {!hideOrders && (

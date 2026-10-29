@@ -19,7 +19,15 @@ import {
  * Buyurtma Tafsiloti sahifasi
  */
 const OrderDetail = () => {
-  const { orderId } = useLocalSearchParams<{ orderId: string }>();
+  const {
+    orderId,
+    referral,
+    customerId: refCustomerId,
+  } = useLocalSearchParams<{
+    orderId: string;
+    referral?: string;
+    customerId?: string;
+  }>();
   const [order, setOrder] = useState<(Order & { id: string }) | null>(null);
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [product, setProduct] = useState<Product | null>(null);
@@ -81,11 +89,6 @@ const OrderDetail = () => {
       </View>
     );
   }
-
-  const { referral, customerId: refCustomerId } = useLocalSearchParams<{
-    referral?: string;
-    customerId?: string;
-  }>();
 
   return (
     <ScrollView style={styles.container}>

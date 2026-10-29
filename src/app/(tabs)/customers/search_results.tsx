@@ -1,9 +1,11 @@
 import CustomerList from "@/components/CustomerList";
+import Loading from "@/components/Loading";
 import db, { limit, where } from "@/services/database";
+import { digitsOnly, phoneVariants } from "@/utils/phone";
 import { Customer } from "@interfaces/index";
 import { Stack, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, View } from "react-native";
+import { View } from "react-native";
 
 const SearchResults = () => {
   const { q, lotId, region, lotName, tagId, tagName } = useLocalSearchParams<{
@@ -26,23 +28,9 @@ const SearchResults = () => {
         // Telefon raqami bo'yicha qidiruv
         if (q && q.trim()) {
           const queryText = q.trim();
-          const digitsOnly = queryText.replace(/\D/g, "");
-          
-          if (digitsOnly.length >= 7) {
-            const phoneVariants = [digitsOnly]; // 998939404021
-            
-            if (digitsOnly.length === 9) {
-              phoneVariants.push(`+998 ${digitsOnly}`); // +998 939404021
-              phoneVariants.push("998" + digitsOnly);   // 998939404021
-            } else if (digitsOnly.length === 12 && digitsOnly.startsWith("998")) {
-              const mainPart = digitsOnly.slice(3);
-              phoneVariants.push(`+998 ${mainPart}`);   // +998 939404021
-              phoneVariants.push(mainPart);              // 939404021
-            }
 
-            // Dublikatlarni olib tashlaymiz
-            const uniqueVariants = [...new Set(phoneVariants)];
-            constraints.push(where("phone", "in", uniqueVariants));
+          if (digitsOnly(queryText).length >= 7) {
+            constraints.push(where("phone", "in", phoneVariants(queryText)));
           } else {
             // Agar raqam bo'lmasa, ism bo'yicha qidirishga harakat qilamiz
             constraints.push(where("name", ">=", queryText));
@@ -79,13 +67,7 @@ const SearchResults = () => {
     performSearch();
   }, [q, lotId, region, tagId]);
 
-  if (loading) {
-    return (
-      <View className="flex-1 items-center justify-center bg-gray-50">
-        <ActivityIndicator size="large" color="#007AFF" />
-      </View>
-    );
-  }
+  if (loading) return <Loading color="#007AFF" />;
 
   return (
     <View className="flex-1">

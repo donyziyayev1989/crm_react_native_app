@@ -7,4 +7,10 @@ module.exports = defineConfig([
   {
     ignores: ['dist/*'],
   },
+  {
+    rules: {
+      // UI matni o'zbek tilida va apostroflar (so'm, Farg'ona) juda ko'p
+      'react/no-unescaped-entities': 'off',
+    },
+  },
 ]);

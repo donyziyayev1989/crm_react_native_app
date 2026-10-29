@@ -1,15 +1,15 @@
 import Card from "@/components/Card";
+import Loading from "@/components/Loading";
 import LostProductModal from "@/components/LostProductModal";
 import LotExpenseModal from "@/components/LotExpenseModal";
 import OrderModal from "@/components/OrderModal";
-import { LostProduct, LotExpense, Order, ProductLot } from "@/interfaces";
+import { LostProduct, LotExpense, Order, ProductLot, WithId } from "@/interfaces";
 import db, { orderBy, where } from "@/services/database";
-import { formatDate, formatMoney } from "@/utils/format";
+import { formatDate, formatMoney, formatSum, parseNum } from "@/utils/format";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Stack, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -23,12 +23,10 @@ import {
  */
 const OrderDashboard = () => {
   const { lotId } = useLocalSearchParams<{ lotId: string }>();
-  const [lot, setLot] = useState<(ProductLot & { id: string }) | null>(null);
-  const [orders, setOrders] = useState<(Order & { id: string })[]>([]);
-  const [lostProducts, setLostProducts] = useState<
-    (LostProduct & { id: string })[]
-  >([]);
-  const [expenses, setExpenses] = useState<(LotExpense & { id: string })[]>([]);
+  const [lot, setLot] = useState<WithId<ProductLot> | null>(null);
+  const [orders, setOrders] = useState<WithId<Order>[]>([]);
+  const [lostProducts, setLostProducts] = useState<WithId<LostProduct>[]>([]);
+  const [expenses, setExpenses] = useState<WithId<LotExpense>[]>([]);
   const [loading, setLoading] = useState(true);
   const [addLostModal, setAddLostModal] = useState(false);
   const [addLineModal, setAddLineModal] = useState(false);
@@ -41,17 +39,11 @@ const OrderDashboard = () => {
     if (!lotId) return;
     setLoading(true);
 
-    const unsubLot = db.lots.watch(
-      (data) => {
-        const found = data.find((l) => l.id === lotId);
-        if (found) setLot(found as ProductLot & { id: string });
-      },
-      where("__name__", "==", lotId),
-    );
+    const unsubLot = db.lots.watchDoc(lotId, setLot);
 
     const unsubOrders = db.orders.watch(
       (data) => {
-        setOrders(data as (Order & { id: string })[]);
+        setOrders(data as WithId<Order>[]);
       },
       where("lotId", "==", lotId),
       orderBy("date", "asc"),
@@ -59,20 +51,18 @@ const OrderDashboard = () => {
 
     const unsubLost = db.lost_products.watch(
       (data) => {
-        setLostProducts(
-          (data as (LostProduct & { id: string })[]).sort(
-            (a, b) => a.timestamp - b.timestamp,
-          ),
-        );
+        setLostProducts(data as WithId<LostProduct>[]);
         setLoading(false);
       },
       where("lotId", "==", lotId),
       orderBy("timestamp", "asc"),
     );
+    // where(lotId) + orderBy(timestamp) lot_expenses uchun composite index talab qiladi
+    // (bunday index yo'q) — shuning uchun JS da saralaymiz.
     const unsubExpenses = db.lot_expenses.watch(
       (data) => {
         setExpenses(
-          (data as (LotExpense & { id: string })[]).sort(
+          [...(data as WithId<LotExpense>[])].sort(
             (a, b) => b.timestamp - a.timestamp,
           ),
         );
@@ -95,13 +85,6 @@ const OrderDashboard = () => {
     let doneSum = 0;
     let cancelCount = 0;
     let cancelSum = 0;
-
-    const parseNum = (val: any) => {
-      if (typeof val === "number") return val;
-      if (typeof val === "string")
-        return parseFloat(val.replace(/\s/g, "")) || 0;
-      return 0;
-    };
 
     orders.forEach((order) => {
       const pCount = parseNum(order.product_count);
@@ -140,13 +123,7 @@ const OrderDashboard = () => {
     };
   }, [orders, lostProducts, expenses]);
 
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#6366f1" />
-      </View>
-    );
-  }
+  if (loading) return <Loading />;
 
   return (
     <>
@@ -182,7 +159,7 @@ const OrderDashboard = () => {
           <View className="flex-row p-2 justify-between items-center ">
             <Text className="font-semibold">Qolgan tovarlar</Text>
             <Text className="font-bold text-md">
-              {lot?.product_count - stats.lostCount}{" "}
+              {(lot?.product_count ?? 0) - stats.lostCount}{" "}
               <Text className="font-normal text-xs text-gray-500">dona</Text>
             </Text>
           </View>
@@ -205,14 +182,14 @@ const OrderDashboard = () => {
             <Text className="font-semibold ">Buyurtma olish uchun miqdor:</Text>
             <Text
               className={`font-bold text-md ${
-                lot?.product_count - stats.lostCount - stats.totalCount === 0
+                (lot?.product_count ?? 0) - stats.lostCount - stats.totalCount === 0
                   ? "text-slate-600"
-                  : lot?.product_count - stats.lostCount - stats.totalCount > 0
+                  : (lot?.product_count ?? 0) - stats.lostCount - stats.totalCount > 0
                     ? "text-green-600"
                     : "text-red-600"
               }`}
             >
-              {lot?.product_count - stats.lostCount - stats.totalCount}{" "}
+              {(lot?.product_count ?? 0) - stats.lostCount - stats.totalCount}{" "}
               <Text className="font-normal text-xs text-gray-500">dona</Text>
             </Text>
           </View>
@@ -362,7 +339,7 @@ const OrderDashboard = () => {
                       },
                     ]}
                   >
-                    {formatMoney(ex.total_price)} so'm
+                    {formatSum(ex.total_price)}
                   </Text>
                 </View>
               ))}

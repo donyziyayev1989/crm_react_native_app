@@ -1,22 +1,28 @@
 import Card from "@/components/Card";
+import { useSwipeableRows } from "@/hooks/useSwipeableRows";
+import { useRefData } from "@/providers/ReferenceData";
 import db, { where } from "@/services/database";
 import { formatPhone } from "@/utils/format";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Customer } from "@interfaces/index";
 import { callPhone, openTelegram } from "@utils/actions";
 import { useRouter } from "expo-router";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Alert, FlatList, Pressable, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 
 const CustomerList = ({ data }: { data: Customer[] }) => {
   const router = useRouter();
-  const rowRefs = useRef(new Map<string, any>());
-  const prevOpenedRow = useRef<string | null>(null);
+  const { closeRow, registerRow } = useSwipeableRows();
+  const { tagsById } = useRefData();
 
-  const [listData, setListData] = useState<Customer[]>(data);
-  const [tags, setTags] = useState<any[]>([]);
+  // Optimistik o'chirish: data prop'ini state'ga nusxalash o'rniga faqat o'chirilgan ID lar
+  const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
+  const listData = useMemo(
+    () => data.filter((c) => !c.id || !deletedIds.has(c.id)),
+    [data, deletedIds],
+  );
   const [unreadChatIds, setUnreadChatIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -31,30 +37,6 @@ const CustomerList = ({ data }: { data: Customer[] }) => {
     return () => unsubscribe();
   }, []);
 
-  useEffect(() => {
-    db.tags.list().then(setTags);
-  }, []);
-
-  const tagsMap = useMemo(() => {
-    const map: Record<string, string> = {};
-    tags.forEach((t) => {
-      map[t.id] = (t.name as string) || t.id;
-    });
-    return map;
-  }, [tags]);
-
-  useEffect(() => {
-    setListData(data);
-  }, [data]);
-
-  const closeRow = (id: string) => {
-    if (prevOpenedRow.current !== null && prevOpenedRow.current !== id) {
-      const row = rowRefs.current.get(prevOpenedRow.current);
-      if (row) row.close();
-    }
-    prevOpenedRow.current = id;
-  };
-
   const handleDelete = (id: string | undefined) => {
     if (!id) return;
     Alert.alert("O'chirish", "Haqiqatan ham bu mijozni o'chirmoqchimisiz?", [
@@ -64,9 +46,9 @@ const CustomerList = ({ data }: { data: Customer[] }) => {
         style: "destructive",
         onPress: async () => {
           try {
-            setListData((prev) => prev.filter((c) => c.id !== id));
+            setDeletedIds((prev) => new Set(prev).add(id));
             await db.customers.delete(id);
-          } catch (error) {
+          } catch {
             Alert.alert("Xato", "Mijozni o'chirishda xatolik yuz berdi");
           }
         },
@@ -131,15 +113,8 @@ const CustomerList = ({ data }: { data: Customer[] }) => {
             } rounded-2xl overflow-hidden shadow-sm`}
           >
             <ReanimatedSwipeable
-              ref={
-                ((ref: any) => {
-                  if (item.id) {
-                    if (ref) rowRefs.current.set(item.id, ref);
-                    else rowRefs.current.delete(item.id);
-                  }
-                }) as any
-              }
-              onSwipeableWillOpen={() => item.id && closeRow(item.id)}
+              ref={registerRow(item.id ?? item.phone)}
+              onSwipeableWillOpen={() => closeRow(item.id ?? item.phone)}
               renderRightActions={() => renderRightPanel(item)}
             >
               <Pressable
@@ -191,13 +166,13 @@ const CustomerList = ({ data }: { data: Customer[] }) => {
                     <View className="flex-row gap-1 items-center">
                       {item.tag_ids.map(
                         (tag: string) =>
-                          tagsMap[tag] && (
+                          tagsById[tag] && (
                             <View
                               key={tag}
                               className="bg-slate-300 px-2 rounded-full"
                             >
                               <Text className="text-sm text-black">
-                                {tagsMap[tag]}
+                                {tagsById[tag].name}
                               </Text>
                             </View>
                           ),
@@ -209,7 +184,7 @@ const CustomerList = ({ data }: { data: Customer[] }) => {
             </ReanimatedSwipeable>
           </View>
         )}
-        keyExtractor={(item) => item.id || Math.random().toString()}
+        keyExtractor={(item) => item.id ?? item.phone}
       />
     </GestureHandlerRootView>
   );
