@@ -8,7 +8,7 @@ import {
   User,
   WithId,
 } from "@/interfaces";
-import { federatedOnAuthStateChanged } from "@/firebase/firebase";
+import { onAuthStateChanged } from "@/supabase/auth";
 import db, { orderBy } from "@/services/database";
 import { districtsOfRegion } from "@/utils/regions";
 import React, {
@@ -90,10 +90,10 @@ export const ReferenceDataProvider = ({ children }: { children: ReactNode }) => 
       unsubs = [];
     };
 
-    // firestore.rules faqat login qilgan foydalanuvchiga o'qishga ruxsat beradi.
-    // Login'dan oldin ochilgan listener permission-denied bilan o'ladi va qayta
+    // RLS faqat login qilgan xodimga o'qishga ruxsat beradi.
+    // Login'dan oldin ochilgan listener ruxsat xatosi bilan o'ladi va qayta
     // tiklanmaydi, shuning uchun watch'lar auth holatiga bog'lab ochiladi.
-    const unsubAuth = federatedOnAuthStateChanged((user) => {
+    const unsubAuth = onAuthStateChanged((user) => {
       stopWatching();
       if (!user) {
         setRegions([]);

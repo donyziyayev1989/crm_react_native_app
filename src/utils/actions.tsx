@@ -1,4 +1,5 @@
 import { Alert, Linking, Platform } from "react-native";
+import { supabase } from "@/supabase/client";
 import { chatEvents } from "./chat_events";
 
 export const callPhone = async (phone: string) => {
@@ -15,8 +16,6 @@ export const callPhone = async (phone: string) => {
     Alert.alert("Xatolik", "Qo'ng'iroq qilib bo'lmadi");
   }
 };
-
-const BOT_TOKEN = process.env.EXPO_PUBLIC_BOT_TOKEN;
 
 export const openTelegram = async (
   identifier: string | number | undefined,
@@ -47,28 +46,13 @@ export const openTelegram = async (
   try {
     // 1. Agar foydalanuvchi ID bo'lsa (numeric va 998 bilan boshlanmasa)
     if (isNumeric && !idStr.startsWith("998") && idStr.length > 7) {
-      if (!BOT_TOKEN) {
-        // Token yo'q bo'lsa, deep link orqali ochishga harakat qilamiz
-        const url = `tg://user?id=${idStr}`;
-        const supported = await Linking.canOpenURL(url);
-        if (supported) {
-          await Linking.openURL(url);
-        } else {
-          await Linking.openURL(`https://t.me/user?id=${idStr}`);
-        }
-        return;
-      }
-
-      // Bot orqali xabar yuborish (ID orqali bog'lanishning eng ishonchli yo'li)
-      const apiUrl = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
-      const response = await fetch(apiUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: idStr, text: message }),
+      // Bot orqali xabar yuborish: token serverda (Edge Function), ilovada emas
+      const { error } = await supabase.functions.invoke("send-telegram", {
+        body: { chat_id: idStr, text: message },
       });
 
-      if (!response.ok) {
-        // Agar bot orqali xato bersa, deep linkni sinab ko'ramiz
+      if (error) {
+        // Bot orqali xato bersa, deep linkni sinab ko'ramiz
         await Linking.openURL(`tg://user?id=${idStr}`);
       }
       return;

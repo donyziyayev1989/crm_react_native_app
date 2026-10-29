@@ -1,8 +1,8 @@
-import { database } from "@/firebase/firebase";
-import { 
-  Customer, 
-  District, 
-  ProductLot, 
+import { supabase } from "@/supabase/client";
+import {
+  Customer,
+  District,
+  ProductLot,
   Region,
   Order,
   Product,
@@ -12,199 +12,283 @@ import {
   Lead,
   LeadChat,
   LeadMessage,
-  FAQ,  
+  FAQ,
   User,
   LotExpense,
   WithId,
 } from "@interfaces/index";
-import * as jsFirestore from "firebase/firestore";
-import { Platform } from "react-native";
+import { cacheRead, cacheWrite } from "./cache";
+import {
+  applyConstraints,
+  Constraint,
+  docToRow,
+  eventAffects,
+  getLimit,
+  isPlainOrdered,
+  makeComparator,
+  rowToDoc,
+  toColumn,
+  where as whereConstraint,
+} from "./query";
 
-// Native Modular API (v23+)
-import * as nativeFirestore from '@react-native-firebase/firestore';
+// Cheklov quruvchilar: ilgari Firestore SDK'dan edi, endi o'z (bir xil imzoli) versiyalar.
+export { where, orderBy, limit } from "./query";
 
-const isWeb = Platform.OS === 'web';
-
-// Har ikkala SDK funksiyalarini bitta ob'ektga yig'amiz
-const f: any = isWeb ? jsFirestore : nativeFirestore;
-
-// Web va native v23 da ham exists() metod. Eski native versiyalarda xususiyat edi.
-const snapExists = (snap: any): boolean =>
-  typeof snap.exists === "function" ? snap.exists() : !!snap.exists;
-
-// ─── Query Constraints ──────────────────────────────────────────────────────
-export const where = f.where;
-export const orderBy = f.orderBy;
-export const limit = f.limit;
-export const startAfter = f.startAfter;
-export const startAt = f.startAt;
-export const endAt = f.endAt;
-export const endBefore = f.endBefore;
+const PAGE = 1000; // PostgREST max_rows
 
 /**
- * Generative Collection Wrapper (Modular v9/v23 style)
+ * Hamma qatorlarni oladi. Limit berilmagan bo'lsa 1000 talik sahifalar bilan
+ * (aks holda server jimgina 1000 ta bilan kesib tashlaydi).
  */
-function createCollection<T>(
-  collectionName: string,
-): CollectionMethods<T> {
-  const getColRef = () => f.collection(database as any, collectionName);
+async function fetchRows(
+  table: string,
+  constraints: Constraint[],
+): Promise<Record<string, any>[]> {
+  const lim = getLimit(constraints);
 
-  return {
-    ref: getColRef,
+  if (lim !== null) {
+    const { data, error } = await applyConstraints(
+      supabase.from(table).select("*") as any,
+      constraints,
+    );
+    if (error) throw error;
+    return data ?? [];
+  }
 
-    list: async (...constraints: any[]): Promise<T[]> => {
-      const colRef = getColRef();
-      const q = constraints.length > 0 ? f.query(colRef, ...constraints) : colRef;
-      const snapshot = await f.getDocs(q);
-      return snapshot.docs.map((d: any) => ({ id: d.id, ...d.data() }) as T);
-    },
+  const all: Record<string, any>[] = [];
+  for (let from = 0; ; from += PAGE) {
+    // `id` bo'yicha qo'shimcha tartib — sahifalar orasida qatorlar qaytarilmasligi uchun
+    const q = applyConstraints(supabase.from(table).select("*") as any, constraints)
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    const { data, error } = await q;
+    if (error) throw error;
+    all.push(...(data ?? []));
+    if (!data || data.length < PAGE) break;
+  }
+  return all;
+}
 
-    get: async (id: string): Promise<T | null> => {
-      const docRef = f.doc(database as any, collectionName, id);
-      const docSnap = await f.getDoc(docRef);
-      if (!snapExists(docSnap)) return null;
-      return { id: docSnap.id, ...docSnap.data() } as T;
-    },
+interface WatchOptions {
+  /** Jadvalda Realtime yo'q (masalan view) */
+  realtime?: boolean;
+}
 
-    create: async (data: Omit<T, "id">): Promise<string> => {
-      const docRef = await f.addDoc(getColRef(), data);
-      return docRef.id;
-    },
+/**
+ * `watch` yadrosi: birinchi fetch + Realtime. Filtrsiz (faqat orderBy) so'rovlar xotirada
+ * patch qilinadi va keshlanadi; boshqalari tegishli hodisada qayta fetch qilinadi.
+ */
+function startWatch<T extends { id: string }>(
+  table: string,
+  constraints: Constraint[],
+  onRows: (rows: T[]) => void,
+  onFailure: () => void,
+  opts: WatchOptions = {},
+): () => void {
+  let active = true;
+  let loaded = false;
+  let hadSubscribed = false;
+  let rows: T[] = [];
+  let timer: ReturnType<typeof setTimeout> | null = null;
 
-    update: async (id: string, data: Partial<Omit<T, "id">>): Promise<void> => {
-      const ref = f.doc(database as any, collectionName, id);
-      await f.updateDoc(ref, data as any);
-    },
+  const plain = isPlainOrdered(constraints);
+  const compare = makeComparator(constraints);
+  const cacheKey = plain
+    ? `${table}|${constraints.map((c) => (c.kind === "orderBy" ? `${c.field}:${c.dir}` : "")).join(",")}`
+    : null;
 
-    delete: async (id: string): Promise<void> => {
-      const ref = f.doc(database as any, collectionName, id);
-      await f.deleteDoc(ref);
-    },
+  const emit = () => {
+    if (!active) return;
+    onRows(rows);
+    if (cacheKey) cacheWrite(cacheKey, rows);
+  };
 
-    set: async (id: string, data: Partial<T>): Promise<void> => {
-      const ref = f.doc(database as any, collectionName, id);
-      await f.setDoc(ref, data, { merge: true });
-    },
+  const load = async () => {
+    try {
+      const raw = await fetchRows(table, constraints);
+      if (!active) return;
+      rows = raw.map((r) => rowToDoc<T>(r));
+      loaded = true;
+      emit();
+    } catch (error) {
+      if (!active) return;
+      // Kirilmagan holatda (anon) ruxsat xatosi kutiladi: kirgandan keyin qayta yuklanadi (pastda)
+      const { data: s } = await supabase.auth.getSession();
+      if (s.session) console.error(`Error watching ${table}:`, error);
+      else console.warn(`watch ${table}: tizimga kirilmagan, kirgandan keyin qayta yuklanadi`);
+      // Keshdan ko'rsatilgan ma'lumot bo'lsa saqlaymiz; aks holda ekranlar "loading" da qolmasin
+      if (!loaded && rows.length === 0) onFailure();
+    }
+  };
 
-    watch: (callback: (data: T[]) => void, ...constraints: any[]) => {
-      const colRef = getColRef();
-      const q = constraints.length > 0 ? f.query(colRef, ...constraints) : colRef;
-      return f.onSnapshot(q, (snapshot: any) => {
-        const data = snapshot.docs.map((d: any) => ({ id: d.id, ...d.data() }) as T);
-        callback(data);
-      }, (error: any) => {
-        // Xato (masalan permission-denied) bo'lsa ham callback chaqiriladi —
-        // aks holda ekranlar abadiy "loading" da qoladi.
-        console.error(`Error watching ${collectionName}:`, error);
-        callback([]);
+  const scheduleLoad = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(load, 150);
+  };
+
+  // Keshdan darhol ko'rsatish (server javobi kelguncha)
+  if (cacheKey) {
+    cacheRead(cacheKey).then((cached) => {
+      if (active && !loaded && cached) {
+        rows = cached as T[];
+        onRows(rows);
+      }
+    });
+  }
+  load();
+
+  // Login'dan oldin ochilgan watch (masalan chat ro'yxati) kirgandan keyin o'zi yangilansin
+  const { data: authSub } = supabase.auth.onAuthStateChange((event) => {
+    if (event === "SIGNED_IN") scheduleLoad();
+  });
+
+  let channel: ReturnType<typeof supabase.channel> | null = null;
+  if (opts.realtime !== false) {
+    channel = supabase
+      .channel(`crm-${table}-${Math.random().toString(36).slice(2)}`)
+      .on(
+        "postgres_changes" as any,
+        { event: "*", schema: "crm", table },
+        (payload: any) => {
+          if (!active) return;
+          if (plain && loaded) {
+            // Xotirada patch: to'liq qator keladi (replica identity full)
+            if (payload.eventType === "DELETE") {
+              const id = payload.old?.id;
+              rows = rows.filter((r) => r.id !== id);
+            } else {
+              const doc = rowToDoc<T>(payload.new);
+              const i = rows.findIndex((r) => r.id === doc.id);
+              rows = i === -1 ? [...rows, doc] : rows.map((r, idx) => (idx === i ? doc : r));
+            }
+            rows = [...rows].sort(compare);
+            emit();
+          } else if (eventAffects(constraints, payload.old, payload.new)) {
+            scheduleLoad();
+          }
+        },
+      )
+      .subscribe((status: string) => {
+        if (status === "SUBSCRIBED") {
+          // Aloqa uzilib qayta tiklanganda o'tkazib yuborilgan o'zgarishlar uchun
+          if (hadSubscribed) scheduleLoad();
+          hadSubscribed = true;
+        }
       });
-    },
+  }
 
-    watchDoc: (id: string, callback: (data: WithId<T> | null) => void) => {
-      const ref = f.doc(database as any, collectionName, id);
-      return f.onSnapshot(
-        ref,
-        (snap: any) => {
-          callback(
-            snapExists(snap) ? ({ id: snap.id, ...snap.data() } as WithId<T>) : null,
-          );
-        },
-        (error: any) => {
-          console.error(`Error watching ${collectionName}/${id}:`, error);
-          callback(null);
-        },
-      );
-    },
-
-    sum: async (field: string, ...constraints: any[]): Promise<number> => {
-      const colRef = getColRef();
-      const q = constraints.length > 0 ? f.query(colRef, ...constraints) : colRef;
-      const snap = await f.getAggregateFromServer(q, { total: f.sum(field) });
-      return Number(snap.data().total) || 0;
-    },
+  return () => {
+    active = false;
+    if (timer) clearTimeout(timer);
+    authSub.subscription.unsubscribe();
+    if (channel) supabase.removeChannel(channel);
   };
 }
 
 /**
- * Generative Sub-Collection Wrapper
+ * Kolleksiya o'ramasi. `scope` — kichik kolleksiya (masalan chat xabarlari) uchun doimiy
+ * `ustun == qiymat` sharti.
  */
-function createSubCollection<T>(
-  parentPath: string,
-  subName: string,
-): (parentId: string) => CollectionMethods<T> {
-  return (parentId: string) => {
-    const path = `${parentPath}/${parentId}/${subName}`;
-    const getSubColRef = () => f.collection(database as any, path);
+function createCollection<T>(
+  table: string,
+  scope?: { column: string; value: string },
+  opts: WatchOptions = {},
+): CollectionMethods<T> {
+  const scoped = (constraints: Constraint[]): Constraint[] =>
+    scope ? [whereConstraint(scope.column, "==", scope.value), ...constraints] : constraints;
 
-    return {
-      ref: getSubColRef,
-      list: async (...constraints: any[]): Promise<T[]> => {
-        const colRef = getSubColRef();
-        const q = constraints.length > 0 ? f.query(colRef, ...constraints) : colRef;
-        const snapshot = await f.getDocs(q);
-        return snapshot.docs.map((d: any) => ({ id: d.id, ...d.data() }) as T);
-      },
-      get: async (id: string): Promise<T | null> => {
-        const docRef = f.doc(database as any, path, id);
-        const docSnap = await f.getDoc(docRef);
-        if (!snapExists(docSnap)) return null;
-        return { id: docSnap.id, ...docSnap.data() } as T;
-      },
-      create: async (data: Omit<T, "id">): Promise<string> => {
-        const docRef = await f.addDoc(getSubColRef(), data);
-        return docRef.id;
-      },
-      update: async (id: string, data: Partial<Omit<T, "id">>): Promise<void> => {
-        const ref = f.doc(database as any, path, id);
-        await f.updateDoc(ref, data as any);
-      },
-      delete: async (id: string): Promise<void> => {
-        const ref = f.doc(database as any, path, id);
-        await f.deleteDoc(ref);
-      },
-      set: async (id: string, data: Partial<T>): Promise<void> => {
-        const ref = f.doc(database as any, path, id);
-        await f.setDoc(ref, data, { merge: true });
-      },
-      watch: (callback, ...constraints) => {
-        const colRef = getSubColRef();
-        const q = constraints.length > 0 ? f.query(colRef, ...constraints) : colRef;
-        return f.onSnapshot(q, (snapshot: any) => {
-          const data = snapshot.docs.map((d: any) => ({ id: d.id, ...d.data() }) as T);
-          callback(data);
-        }, (err: any) => {
-          console.error(`Error watching ${path}:`, err);
-          callback([]);
-        });
-      },
-      watchDoc: (id: string, callback: (data: WithId<T> | null) => void) => {
-        const ref = f.doc(database as any, path, id);
-        return f.onSnapshot(
-          ref,
-          (snap: any) => {
-            callback(
-              snapExists(snap) ? ({ id: snap.id, ...snap.data() } as WithId<T>) : null,
-            );
-          },
-          (err: any) => {
-            console.error(`Error watching ${path}/${id}:`, err);
-            callback(null);
-          },
-        );
-      },
-      sum: async (field: string, ...constraints: any[]): Promise<number> => {
-        const colRef = getSubColRef();
-        const q = constraints.length > 0 ? f.query(colRef, ...constraints) : colRef;
-        const snap = await f.getAggregateFromServer(q, { total: f.sum(field) });
-        return Number(snap.data().total) || 0;
-      },
-    };
+  const strip = (doc: any) => {
+    if (scope) delete doc[scope.column];
+    return doc;
   };
+
+  return {
+    list: async (...constraints: Constraint[]): Promise<T[]> => {
+      const rows = await fetchRows(table, scoped(constraints));
+      return rows.map((r) => strip({ ...rowToDoc<any>(r) }) as T);
+    },
+
+    get: async (id: string): Promise<T | null> => {
+      const { data, error } = await supabase.from(table).select("*").eq("id", id).maybeSingle();
+      if (error) throw error;
+      if (!data) return null;
+      return strip(rowToDoc<any>(data)) as T;
+    },
+
+    create: async (data: Omit<T, "id">): Promise<string> => {
+      const row = docToRow(data as any);
+      if (scope) row[scope.column] = scope.value;
+      const { data: res, error } = await supabase.from(table).insert(row).select("id").single();
+      if (error) throw error;
+      return res.id as string;
+    },
+
+    update: async (id: string, data: Partial<Omit<T, "id">>): Promise<void> => {
+      const { error } = await supabase.from(table).update(docToRow(data as any)).eq("id", id);
+      if (error) throw error;
+    },
+
+    delete: async (id: string): Promise<void> => {
+      const { error } = await supabase.from(table).delete().eq("id", id);
+      if (error) throw error;
+    },
+
+    // Firestore setDoc(merge) kabi: yo'q bo'lsa yaratadi, bo'lsa faqat berilgan maydonlarni yangilaydi
+    set: async (id: string, data: Partial<T>): Promise<void> => {
+      const row: Record<string, any> = { ...docToRow(data as any), id };
+      if (scope) row[scope.column] = scope.value;
+      const { error } = await supabase.from(table).upsert(row, { onConflict: "id" });
+      if (error) throw error;
+    },
+
+    watch: (callback: (data: T[]) => void, ...constraints: Constraint[]) =>
+      startWatch<any>(
+        table,
+        scoped(constraints),
+        (rows) => callback(rows.map((r) => strip({ ...r })) as T[]),
+        // Xato (masalan ruxsat yo'q) bo'lsa ham callback chaqiriladi — ekranlar abadiy "loading" da qolmasin.
+        () => callback([]),
+        opts,
+      ),
+
+    watchDoc: (id: string, callback: (data: WithId<T> | null) => void) =>
+      startWatch<any>(
+        table,
+        scoped([whereConstraint("id", "==", id)]),
+        (rows) => callback(rows[0] ? (strip({ ...rows[0] }) as WithId<T>) : null),
+        () => callback(null),
+        opts,
+      ),
+
+    sum: async (field: string, ...constraints: Constraint[]): Promise<number> => {
+      const all = scoped(constraints);
+      // Tez yo'l: partiya bo'yicha buyurtmalar soni — serverda yig'iladi
+      const eq = all.length === 1 && all[0].kind === "where" && all[0].op === "==" ? all[0] : null;
+      if (table === "orders" && field === "product_count" && eq && toColumn(eq.field) === "lot_id") {
+        const { data, error } = await supabase.rpc("sum_orders_product_count", {
+          p_lot_id: eq.value,
+        });
+        if (error) throw error;
+        return Number(data) || 0;
+      }
+      const rows = await fetchRows(table, all);
+      return rows.reduce((acc, r) => acc + (Number(r[toColumn(field)]) || 0), 0);
+    },
+  };
+}
+
+/** Ichki kolleksiya: `lead_chats/{id}/messages` → `lead_messages` jadvali (chat_id = parent id) */
+function createSubCollection<T>(
+  table: string,
+  parentColumn: string,
+): (parentId: string) => CollectionMethods<T> {
+  return (parentId: string) => createCollection<T>(table, { column: parentColumn, value: parentId });
 }
 
 // ─── Database Exports ───────────────────────────────────────────────────────
 const db = {
-  users: createCollection<User>("users"),
+  // view: Realtime yo'q
+  users: createCollection<User>("users", undefined, { realtime: false }),
   lots: createCollection<ProductLot>("lots"),
   orders: createCollection<Order>("orders"),
   products: createCollection<Product>("products"),
@@ -217,7 +301,7 @@ const db = {
   leads: createCollection<Lead>("leads"),
   lead_chats: createCollection<LeadChat>("lead_chats"),
   // Sub-collections
-  lead_messages: createSubCollection<LeadMessage>("lead_chats", "messages"),
+  lead_messages: createSubCollection<LeadMessage>("lead_messages", "chat_id"),
   faqs: createCollection<FAQ>("faqs"),
   settings: createCollection<any>("settings"),
   lot_expenses: createCollection<LotExpense>("lot_expenses"),
@@ -227,14 +311,13 @@ export default db;
 
 // Types
 export interface CollectionMethods<T> {
-  ref: () => any;
-  list: (...constraints: any[]) => Promise<T[]>;
+  list: (...constraints: Constraint[]) => Promise<T[]>;
   get: (id: string) => Promise<T | null>;
   create: (data: Omit<T, "id">) => Promise<string>;
   update: (id: string, data: Partial<Omit<T, "id">>) => Promise<void>;
   delete: (id: string) => Promise<void>;
   set: (id: string, data: Partial<T>) => Promise<void>;
-  watch: (callback: (data: T[]) => void, ...constraints: any[]) => () => void;
+  watch: (callback: (data: T[]) => void, ...constraints: Constraint[]) => () => void;
   watchDoc: (id: string, callback: (data: WithId<T> | null) => void) => () => void;
-  sum: (field: string, ...constraints: any[]) => Promise<number>;
+  sum: (field: string, ...constraints: Constraint[]) => Promise<number>;
 }

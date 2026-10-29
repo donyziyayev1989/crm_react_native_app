@@ -20,7 +20,6 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "googleServicesFile": "./google-services.json",
       "package": "com.anonymous.sale"
     },
     "web": {
@@ -48,8 +47,7 @@
         {
           "RNMapboxMapsImpl": "mapbox"
         }
-      ],
-      "@react-native-firebase/app"
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

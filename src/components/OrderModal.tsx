@@ -1,4 +1,4 @@
-import { auth } from "@/firebase/firebase";
+import { auth } from "@/supabase/auth";
 import { Customer, Order, WithId } from "@/interfaces";
 import { useRefData } from "@/providers/ReferenceData";
 import db from "@/services/database";

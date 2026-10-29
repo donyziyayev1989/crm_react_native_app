@@ -2,7 +2,7 @@ import Input from "@/components/Input";
 import PhoneInput from "@/components/PhoneInput";
 import RegionDistrictSelect from "@/components/RegionDistrictSelect";
 import Select from "@/components/Select";
-import { auth } from "@/firebase/firebase";
+import { auth } from "@/supabase/auth";
 import { useRefData } from "@/providers/ReferenceData";
 import db, { where } from "@/services/database";
 import { formatPhone } from "@/utils/format";

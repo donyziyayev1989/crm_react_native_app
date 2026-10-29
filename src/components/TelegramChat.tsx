@@ -1,4 +1,4 @@
-import { auth } from "@/firebase/firebase";
+import { auth } from "@/supabase/auth";
 import { LeadMessage, User } from "@/interfaces";
 import { useRefData } from "@/providers/ReferenceData";
 import db, { orderBy } from "@/services/database";
@@ -99,7 +99,7 @@ const TelegramChat = ({
         last_timestamp: now,
       });
       setMessage("");
-      // 2. Xabarni Firestore-ga saqlash (Offline-first: bu qism har doim ishlaydi)
+      // 2. Xabarni bazaga saqlash
       await db.lead_messages(chatId).create({
         text: message,
         sender: "operator",
@@ -108,8 +108,7 @@ const TelegramChat = ({
       });
 
       // 3. Telegram bot orqali yuborishga harakat qilish
-      // Eslatma: Agar offline bo'lsak, bu qism xato berishi mumkin,
-      // lekin xabar baribir Firestore-da qoladi.
+      // Eslatma: yuborish xato bersa ham xabar bazada qoladi.
       try {
         await openTelegramUtil(targetIdentifier, message);
       } catch (tgErr) {

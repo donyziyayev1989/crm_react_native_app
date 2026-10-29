@@ -1,14 +1,12 @@
 import Card from "@/components/Card";
-import db from "@/services/database";
 import {
-  federatedGoogleAuthProvider,
-  federatedOnAuthStateChanged,
-  federatedSignInWithCredential,
-  federatedSignOut,
-} from "@/firebase/firebase";
+  AppUser,
+  onAuthStateChanged,
+  signInWithGoogleIdToken,
+  signOut,
+} from "@/supabase/auth";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Link, Stack } from "expo-router";
-import { User } from "firebase/auth";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -23,7 +21,7 @@ import {
 } from "react-native";
 
 export default function Profile() {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Safe GoogleSignin access
@@ -54,7 +52,7 @@ export default function Profile() {
   }, []);
 
   useEffect(() => {
-    const unsubscribe = federatedOnAuthStateChanged((currentUser) => {
+    const unsubscribe = onAuthStateChanged((currentUser) => {
       setUser(currentUser);
       setLoading(false);
     });
@@ -85,18 +83,8 @@ export default function Profile() {
 
       if (!idToken) throw new Error("No ID Token found");
 
-      const googleCredential = federatedGoogleAuthProvider.credential(idToken);
-      const userCredential =
-        await federatedSignInWithCredential(googleCredential);
-      const currentUser = userCredential.user;
-
-      // Save/Update user in Firestore
-      await db.users.set(currentUser.uid, {
-        name: currentUser.displayName || "Noma'lum foydalanuvchi",
-        email: currentUser.email || null,
-        photoURL: currentUser.photoURL || null,
-        role: "employee", // Default role
-      });
+      // Faqat profiles jadvalida faol xodim bo'lganlar kiradi (aks holda NoAccessError)
+      await signInWithGoogleIdToken(idToken);
 
       Alert.alert("Tizimga kirildi", "Muvaffaqiyatli tizimga kirdingiz!");
     } catch (error: any) {
@@ -112,7 +100,7 @@ export default function Profile() {
   const logOut = async () => {
     try {
       setLoading(true);
-      await federatedSignOut();
+      await signOut();
       const GSignin = getGoogleSignin();
       if (Platform.OS !== ("web" as string) && GSignin) {
         await GSignin.signOut();
