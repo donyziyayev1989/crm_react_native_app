@@ -13,7 +13,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 
 const Lots = () => {
-  const { lots, loading } = useRefData();
+  const { lots, loading, isAdmin } = useRefData();
   const router = useRouter();
   const { closeRow, registerRow } = useSwipeableRows();
   const [orderCounts, setOrderCounts] = useState<Record<string, number>>({});
@@ -62,18 +62,20 @@ const Lots = () => {
         >
           <MaterialIcons name="analytics" size={22} color="white" />
         </Pressable>
-        <Pressable
-          onPress={() => {
-            closeRow(item.id);
-            router.push({
-              pathname: "/lots/edit/[lotId]",
-              params: { lotId: item.id },
-            });
-          }}
-          className="bg-slate-300 w-16 h-full flex items-center justify-center"
-        >
-          <MaterialIcons name="edit" size={22} color="white" />
-        </Pressable>
+        {isAdmin && (
+          <Pressable
+            onPress={() => {
+              closeRow(item.id);
+              router.push({
+                pathname: "/lots/edit/[lotId]",
+                params: { lotId: item.id },
+              });
+            }}
+            className="bg-slate-300 w-16 h-full flex items-center justify-center"
+          >
+            <MaterialIcons name="edit" size={22} color="white" />
+          </Pressable>
+        )}
       </View>
     );
   };
@@ -85,14 +87,16 @@ const Lots = () => {
       <Stack.Screen
         options={{
           headerTitle: "Partiyalar",
-          headerRight: () => (
-            <Pressable
-              onPress={() => router.push("/lots/addLot" as any)}
-              className="p-3"
-            >
-              <MaterialIcons name="add-circle" size={28} color="#6366f1" />
-            </Pressable>
-          ),
+          // Operator partiya qo'shmaydi (null — layout'dagi tugma ham chiqmasin)
+          headerRight: () =>
+            isAdmin ? (
+              <Pressable
+                onPress={() => router.push("/lots/addLot" as any)}
+                className="p-3"
+              >
+                <MaterialIcons name="add-circle" size={28} color="#6366f1" />
+              </Pressable>
+            ) : null,
         }}
       />
       <View className="flex-1">
@@ -104,14 +108,16 @@ const Lots = () => {
             <View className="items-center mt-20">
               <MaterialIcons name="inventory" size={48} color="gray" />
               <Text className="text-gray-500 mt-2">Partiyalar mavjud emas</Text>
-              <Pressable
-                onPress={() => router.push("/lots/addLot" as any)}
-                className="mt-4 bg-indigo-500 px-6 py-3 rounded-xl"
-              >
-                <Text className="text-white font-semibold">
-                  Partiya qo'shish
-                </Text>
-              </Pressable>
+              {isAdmin && (
+                <Pressable
+                  onPress={() => router.push("/lots/addLot" as any)}
+                  className="mt-4 bg-indigo-500 px-6 py-3 rounded-xl"
+                >
+                  <Text className="text-white font-semibold">
+                    Partiya qo'shish
+                  </Text>
+                </Pressable>
+              )}
             </View>
           )}
           renderItem={({ item }) => (

@@ -1,4 +1,10 @@
-import { findCustomerMatches, leadItems, sourceLabel } from "../leads";
+import {
+  buildConfirmArgs,
+  confirmErrorMessage,
+  findCustomerMatches,
+  leadItems,
+  sourceLabel,
+} from "../leads";
 
 const baseLead = {
   name: "Mijoz",
@@ -84,5 +90,111 @@ describe("findCustomerMatches", () => {
 
   it("qisqa raqamlar telefon bo'yicha qidirilmaydi", () => {
     expect(findCustomerMatches(customers, "90")).toEqual([]);
+  });
+});
+
+describe("buildConfirmArgs", () => {
+  const lead = {
+    ...baseLead,
+    id: "lead1",
+    source: "website" as const,
+    items: [
+      { product_id: "a", name: "A", price: 1000, quantity: 1 },
+      { product_id: "b", name: "B", price: null, quantity: 3 },
+    ],
+  };
+  const form = {
+    customerId: "c1" as string | null,
+    lotId: "lot1",
+    deliveryPrice: "15 000",
+    prices: { b: "2 500" } as Record<string, string>,
+  };
+
+  it("narxsiz itemga narx kiritilmasa xato qaytaradi", () => {
+    expect(buildConfirmArgs(lead, { ...form, prices: {} })).toEqual({
+      ok: false,
+      error: "Narxi kiritilmagan mahsulot bor",
+    });
+    expect(buildConfirmArgs(lead, { ...form, prices: { b: "  " } })).toEqual({
+      ok: false,
+      error: "Narxi kiritilmagan mahsulot bor",
+    });
+  });
+
+  it("partiya tanlanmasa xato qaytaradi", () => {
+    expect(buildConfirmArgs(lead, { ...form, lotId: "" })).toEqual({
+      ok: false,
+      error: "Partiyani tanlang",
+    });
+  });
+
+  it("hamma narx berilsa argumentlarni yig'adi (itemPrices faqat narxsiz itemlar uchun)", () => {
+    expect(buildConfirmArgs(lead, { ...form, prices: { a: "999", b: "2 500" } })).toEqual({
+      ok: true,
+      args: {
+        leadId: "lead1",
+        customerId: "c1",
+        lotId: "lot1",
+        deliveryPrice: 15000,
+        itemPrices: { b: 2500 },
+      },
+    });
+  });
+
+  it("yangi mijoz (customerId null) null bo'lib o'tadi, bo'sh yetkazish narxi 0", () => {
+    const res = buildConfirmArgs(lead, { ...form, customerId: null, deliveryPrice: "" });
+    expect(res).toEqual({
+      ok: true,
+      args: {
+        leadId: "lead1",
+        customerId: null,
+        lotId: "lot1",
+        deliveryPrice: 0,
+        itemPrices: { b: 2500 },
+      },
+    });
+  });
+
+  it("eski Telegram lead (product_* maydonlari) narxi product_id bo'yicha olinadi", () => {
+    const tgLead = {
+      ...baseLead,
+      id: "lead2",
+      source: "telegram" as const,
+      product_id: "p1",
+      product_name: "X",
+      product_count: 2,
+    };
+    expect(
+      buildConfirmArgs(tgLead, { ...form, prices: { p1: "7000" } }),
+    ).toEqual({
+      ok: true,
+      args: {
+        leadId: "lead2",
+        customerId: "c1",
+        lotId: "lot1",
+        deliveryPrice: 15000,
+        itemPrices: { p1: 7000 },
+      },
+    });
+  });
+});
+
+describe("confirmErrorMessage", () => {
+  it("RPC xatolarini o'zbekcha xabarga aylantiradi", () => {
+    expect(confirmErrorMessage({ message: "already_confirmed" })).toBe(
+      "Bu murojaat allaqachon tasdiqlangan",
+    );
+    expect(confirmErrorMessage({ message: "unpriced_item", details: "p1" })).toBe(
+      "Narxi kiritilmagan mahsulot bor",
+    );
+    expect(confirmErrorMessage({ message: "lot_not_found" })).toBe("Partiya topilmadi");
+    expect(confirmErrorMessage({ message: "customer_not_found" })).toBe("Mijoz topilmadi");
+    expect(confirmErrorMessage({ message: "no_items" })).toBe("Mahsulot yo'q");
+    expect(confirmErrorMessage({ message: "not_staff" })).toBe("Ruxsat yo'q");
+  });
+
+  it("noma'lum xato umumiy xabar beradi", () => {
+    expect(confirmErrorMessage(new Error("network"))).toBe("Tasdiqlashda xatolik yuz berdi");
+    expect(confirmErrorMessage(null)).toBe("Tasdiqlashda xatolik yuz berdi");
   });
 });

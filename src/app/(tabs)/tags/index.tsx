@@ -13,13 +13,14 @@ const emptyForm: TagFormValues = { name: "" };
 
 export default function TagsScreen() {
   const router = useRouter();
-  const { tags, loading } = useRefData();
+  const { tags, loading, isAdmin } = useRefData();
 
   return (
     <SimpleCrudScreen<WithId<Tag>, TagFormValues>
       title="Teglar"
       items={tags}
       loading={loading}
+      readOnly={!isAdmin}
       emptyForm={emptyForm}
       fields={[
         {
@@ -38,12 +39,14 @@ export default function TagsScreen() {
         <View style={styles.empty}>
           <MaterialIcons name="label-off" size={56} color="#d1d5db" />
           <Text style={styles.emptyText}>Hech qanday teg mavjud emas</Text>
-          <Text style={styles.emptySubText}>
-            Yangi teg qo'shish uchun + tugmasini bosing
-          </Text>
+          {isAdmin && (
+            <Text style={styles.emptySubText}>
+              Yangi teg qo'shish uchun + tugmasini bosing
+            </Text>
+          )}
         </View>
       }
-      renderItem={(item, { edit, remove }) => (
+      renderItem={(item, { edit, remove, readOnly }) => (
         <Card className="mb-3" style={styles.boxShadow}>
           <View className="flex-row justify-between items-center">
             <Pressable
@@ -63,14 +66,16 @@ export default function TagsScreen() {
                 <Text className="text-xs text-indigo-500 mt-0.5">Mijozlarni ko'rish →</Text>
               </View>
             </Pressable>
-            <View className="flex-row gap-2">
-              <Pressable onPress={edit} className="p-2 bg-blue-50 rounded-full">
-                <MaterialIcons name="edit" size={20} color="#3b82f6" />
-              </Pressable>
-              <Pressable onPress={remove} className="p-2 bg-red-50 rounded-full">
-                <MaterialIcons name="delete" size={20} color="#ef4444" />
-              </Pressable>
-            </View>
+            {!readOnly && (
+              <View className="flex-row gap-2">
+                <Pressable onPress={edit} className="p-2 bg-blue-50 rounded-full">
+                  <MaterialIcons name="edit" size={20} color="#3b82f6" />
+                </Pressable>
+                <Pressable onPress={remove} className="p-2 bg-red-50 rounded-full">
+                  <MaterialIcons name="delete" size={20} color="#ef4444" />
+                </Pressable>
+              </View>
+            )}
           </View>
         </Card>
       )}

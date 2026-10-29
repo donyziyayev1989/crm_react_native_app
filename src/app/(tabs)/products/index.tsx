@@ -8,40 +8,49 @@ import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
-type ProductFormValues = { name: string; price: string; description: string };
-const emptyForm: ProductFormValues = { name: "", price: "", description: "" };
+type ProductFormValues = {
+  name: string;
+  price: string;
+  description: string;
+  active: boolean;
+};
+// Yangi mahsulot saytda darhol ko'rinmaydi (active: false) — admin o'zi yoqadi
+const emptyForm: ProductFormValues = { name: "", price: "", description: "", active: false };
 
 export default function ProductsScreen() {
-  const { products, loading } = useRefData();
+  const { products, loading, isAdmin } = useRefData();
 
   return (
     <SimpleCrudScreen<WithId<Product>, ProductFormValues>
       title="Mahsulotlar"
       items={products}
       loading={loading}
+      readOnly={!isAdmin}
       emptyForm={emptyForm}
       fields={[
         { name: "name", placeholder: "Nomi", required: true },
         { name: "price", placeholder: "Narxi", keyboardType: "numeric" },
         { name: "description", placeholder: "Tavsif (ixtiyoriy)", multiline: true },
+        { name: "active", placeholder: "Saytda ko'rsatish", type: "switch" },
       ]}
       toForm={(p) => ({
         name: p.name,
         price: p.price == null ? "" : String(p.price),
         description: p.description || "",
+        active: !!p.active,
       })}
       fromForm={(v, editing) => ({
         name: v.name,
         price: v.price.trim() === "" ? null : parseFloat(v.price),
         description: v.description,
-        active: editing ? editing.active : true,
+        active: v.active,
         updatedAt: new Date(),
         ...(editing ? {} : { createdAt: new Date() }),
       })}
       collection={db.products}
       modalTitle={(e) => (e ? "Tahrirlash" : "Yangi mahsulot")}
       deleteMessage="Haqiqatdan ham bu mahsulotni o'chirmoqchimisiz?"
-      renderItem={(item, { edit, remove }) => (
+      renderItem={(item, { edit, remove, readOnly }) => (
         <Card className="mb-3" style={styles.boxShadow}>
           <View className="flex-row justify-between items-center">
             <View className="flex-1">
@@ -49,14 +58,16 @@ export default function ProductsScreen() {
               <Text className="text-gray-500">{item.description || "Tavsif yo'q"}</Text>
               <Text className="text-indigo-600 font-bold mt-1">{item.price == null ? "Narx kelishiladi" : formatSum(item.price)}</Text>
             </View>
-            <View className="flex-row gap-2">
-              <Pressable onPress={edit} className="p-2 bg-blue-50 rounded-full">
-                <MaterialIcons name="edit" size={20} color="#3b82f6" />
-              </Pressable>
-              <Pressable onPress={remove} className="p-2 bg-red-50 rounded-full">
-                <MaterialIcons name="delete" size={20} color="#ef4444" />
-              </Pressable>
-            </View>
+            {!readOnly && (
+              <View className="flex-row gap-2">
+                <Pressable onPress={edit} className="p-2 bg-blue-50 rounded-full">
+                  <MaterialIcons name="edit" size={20} color="#3b82f6" />
+                </Pressable>
+                <Pressable onPress={remove} className="p-2 bg-red-50 rounded-full">
+                  <MaterialIcons name="delete" size={20} color="#ef4444" />
+                </Pressable>
+              </View>
+            )}
           </View>
         </Card>
       )}

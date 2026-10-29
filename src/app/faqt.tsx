@@ -1,6 +1,7 @@
 import Card from "@/components/Card";
 import CustomModal from "@/components/CustomModal";
 import { FAQ } from "@/interfaces";
+import { useRefData } from "@/providers/ReferenceData";
 import db, { orderBy } from "@/services/database";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Link, Stack } from "expo-router";
@@ -18,6 +19,7 @@ import {
 } from "react-native";
 
 export default function FAQScreen() {
+  const { isAdmin } = useRefData();
   const [faqs, setFaqs] = useState<FAQ[]>([]);
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
@@ -120,11 +122,12 @@ export default function FAQScreen() {
               </Pressable>
             </Link>
           ),
-          headerRight: () => (
-            <Pressable className="p-3" onPress={() => setIsAdding(true)}>
-              <MaterialIcons name="add-circle" size={28} color="#6366f1" />
-            </Pressable>
-          ),
+          headerRight: () =>
+            isAdmin ? (
+              <Pressable className="p-3" onPress={() => setIsAdding(true)}>
+                <MaterialIcons name="add-circle" size={28} color="#6366f1" />
+              </Pressable>
+            ) : null,
         }}
       />
       <CustomModal
@@ -173,20 +176,26 @@ export default function FAQScreen() {
 
             <View style={styles.divider} />
             <Text style={styles.answerText}>💡 {item.answer}</Text>
-            <View style={styles.actionButtons}>
-              <Pressable
-                onPress={() => editFaq(item)}
-                style={styles.iconButton}
-              >
-                <MaterialIcons name="edit" size={22} color="#777777" />
-              </Pressable>
-              <Pressable
-                onPress={() => item.id && deleteFaq(item.id)}
-                style={styles.iconButton}
-              >
-                <MaterialIcons name="delete-sweep" size={22} color="#f87171" />
-              </Pressable>
-            </View>
+            {isAdmin && (
+              <View style={styles.actionButtons}>
+                <Pressable
+                  onPress={() => editFaq(item)}
+                  style={styles.iconButton}
+                >
+                  <MaterialIcons name="edit" size={22} color="#777777" />
+                </Pressable>
+                <Pressable
+                  onPress={() => item.id && deleteFaq(item.id)}
+                  style={styles.iconButton}
+                >
+                  <MaterialIcons
+                    name="delete-sweep"
+                    size={22}
+                    color="#f87171"
+                  />
+                </Pressable>
+              </View>
+            )}
           </Card>
         )}
         ListEmptyComponent={

@@ -4,6 +4,7 @@ import LostProductModal from "@/components/LostProductModal";
 import LotExpenseModal from "@/components/LotExpenseModal";
 import OrderModal from "@/components/OrderModal";
 import { LostProduct, LotExpense, Order, ProductLot, WithId } from "@/interfaces";
+import { useRefData } from "@/providers/ReferenceData";
 import db, { orderBy, where } from "@/services/database";
 import { formatDate, formatMoney, formatSum, parseNum } from "@/utils/format";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
@@ -23,6 +24,7 @@ import {
  */
 const OrderDashboard = () => {
   const { lotId } = useLocalSearchParams<{ lotId: string }>();
+  const { isAdmin } = useRefData();
   const [lot, setLot] = useState<WithId<ProductLot> | null>(null);
   const [orders, setOrders] = useState<WithId<Order>[]>([]);
   const [lostProducts, setLostProducts] = useState<WithId<LostProduct>[]>([]);
@@ -234,12 +236,14 @@ const OrderDashboard = () => {
             <Text style={[styles.cardTitle, { marginBottom: 0 }]}>
               Yo'qotilgan tovarlar
             </Text>
-            <Pressable
-              onPress={() => setAddLostModal(true)}
-              className="bg-indigo-50 p-2 rounded-full"
-            >
-              <MaterialIcons name="add" size={20} color="#6366f1" />
-            </Pressable>
+            {isAdmin && (
+              <Pressable
+                onPress={() => setAddLostModal(true)}
+                className="bg-indigo-50 p-2 rounded-full"
+              >
+                <MaterialIcons name="add" size={20} color="#6366f1" />
+              </Pressable>
+            )}
           </View>
           {lostProducts.length === 0 ? (
             <Text style={styles.emptyText}>
@@ -293,12 +297,14 @@ const OrderDashboard = () => {
             <Text style={[styles.cardTitle, { marginBottom: 0 }]}>
               Partiya xarajatlari
             </Text>
-            <Pressable
-              onPress={() => setAddExpenseModal(true)}
-              className="bg-green-50 p-2 rounded-full"
-            >
-              <MaterialIcons name="add" size={20} color="#10b981" />
-            </Pressable>
+            {isAdmin && (
+              <Pressable
+                onPress={() => setAddExpenseModal(true)}
+                className="bg-green-50 p-2 rounded-full"
+              >
+                <MaterialIcons name="add" size={20} color="#10b981" />
+              </Pressable>
+            )}
           </View>
           {expenses.length === 0 ? (
             <Text style={styles.emptyText}>Xarajatlar mavjud emas.</Text>

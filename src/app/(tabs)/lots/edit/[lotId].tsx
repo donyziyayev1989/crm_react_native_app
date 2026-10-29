@@ -1,9 +1,10 @@
 import ProductLotForm from "@/components/ProductLotForm";
 import { ProductLot } from "@/interfaces";
+import { useRefData } from "@/providers/ReferenceData";
 import db from "@/services/database";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 /**
  * EditLot (Partiyani tahrirlash)
@@ -11,6 +12,7 @@ import { ActivityIndicator, StyleSheet, View } from "react-native";
 const EditLot = () => {
   const { lotId } = useLocalSearchParams<{ lotId: string }>();
   const router = useRouter();
+  const { isAdmin } = useRefData();
   const [lot, setLot] = useState<ProductLot | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -22,6 +24,16 @@ const EditLot = () => {
       });
     }
   }, [lotId]);
+
+  if (!isAdmin) {
+    return (
+      <View style={styles.center}>
+        <Text style={{ color: "#6b7280", textAlign: "center", padding: 24 }}>
+          Faqat administrator tahrirlay oladi
+        </Text>
+      </View>
+    );
+  }
 
   if (loading) {
     return (

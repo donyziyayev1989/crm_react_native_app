@@ -12,10 +12,12 @@ interface Props {
   items: WithId<LostProduct>[];
   onAdd: () => void;
   onEdit: (item: WithId<LostProduct>) => void;
+  /** Operator: qo'shish/tahrirlash/o'chirish tugmalari yashirin */
+  readOnly?: boolean;
 }
 
 /** Yo'qotilgan tovarlar ro'yxati (lots/[lotId] "Yo'qotilgan" tabi) */
-const LotLostList = ({ lotId, lot, items, onAdd, onEdit }: Props) => {
+const LotLostList = ({ lotId, lot, items, onAdd, onEdit, readOnly = false }: Props) => {
   const confirmDelete = (id: string) =>
     Alert.alert("O'chirish", "O'chirilsinmi?", [
       { text: "Yo'q" },
@@ -41,10 +43,12 @@ const LotLostList = ({ lotId, lot, items, onAdd, onEdit }: Props) => {
         </Text>
       </View>
 
-      <Pressable style={[styles.btn, { backgroundColor: "#ef4444" }]} onPress={onAdd}>
-        <MaterialIcons name="remove-circle" size={20} color="#fff" />
-        <Text style={styles.btnText}>Yo'qotilgan qo'shish</Text>
-      </Pressable>
+      {!readOnly && (
+        <Pressable style={[styles.btn, { backgroundColor: "#ef4444" }]} onPress={onAdd}>
+          <MaterialIcons name="remove-circle" size={20} color="#fff" />
+          <Text style={styles.btnText}>Yo'qotilgan qo'shish</Text>
+        </Pressable>
+      )}
 
       {items.length === 0 ? (
         <View style={styles.empty}>
@@ -58,14 +62,16 @@ const LotLostList = ({ lotId, lot, items, onAdd, onEdit }: Props) => {
               <Text style={styles.itemName}>{ls.count} dona</Text>
               <Text style={styles.itemDetail}>{ls.date}</Text>
             </View>
-            <View style={styles.actions}>
-              <Pressable onPress={() => onEdit(ls)}>
-                <MaterialIcons name="edit" size={18} color="#6366f1" />
-              </Pressable>
-              <Pressable onPress={() => confirmDelete(ls.id)}>
-                <MaterialIcons name="delete" size={18} color="#ef4444" />
-              </Pressable>
-            </View>
+            {!readOnly && (
+              <View style={styles.actions}>
+                <Pressable onPress={() => onEdit(ls)}>
+                  <MaterialIcons name="edit" size={18} color="#6366f1" />
+                </Pressable>
+                <Pressable onPress={() => confirmDelete(ls.id)}>
+                  <MaterialIcons name="delete" size={18} color="#ef4444" />
+                </Pressable>
+              </View>
+            )}
           </View>
         ))
       )}

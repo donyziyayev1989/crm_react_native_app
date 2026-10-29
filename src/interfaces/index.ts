@@ -152,10 +152,10 @@ export interface Lead {
   order_ids?: string[];
   name: string;
   phone: string;
-  telegram_id: string;
+  telegram_id?: string; // sayt leadlarida yo'q
   product_id?: string;
   product_name?: string;
-  product_count: number;
+  product_count?: number; // eski Telegram leadlar; yangilarida items
   region_name?: string;
   district_name?: string;
   location?: {

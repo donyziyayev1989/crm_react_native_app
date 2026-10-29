@@ -40,6 +40,8 @@ export interface RefData {
   tagsById: Record<string, WithId<Tag>>;
   /** Birinchi snapshot hammasidan kelguncha true */
   loading: boolean;
+  /** Joriy foydalanuvchi admin. Operator umumiy jadvallarni (mahsulot, teg, partiya, FAQ) tahrirlamaydi */
+  isAdmin: boolean;
 }
 
 const byId = <T extends { id: string }>(items: T[]): Record<string, T> => {
@@ -79,6 +81,7 @@ export const ReferenceDataProvider = ({ children }: { children: ReactNode }) => 
   const [users, setUsers] = useState<WithId<User>[]>([]);
   const [customers, setCustomers] = useState<WithId<Customer>[]>([]);
   const [loaded, setLoaded] = useState(INITIAL_LOADED);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     const mark = (key: Key) =>
@@ -95,6 +98,7 @@ export const ReferenceDataProvider = ({ children }: { children: ReactNode }) => 
     // tiklanmaydi, shuning uchun watch'lar auth holatiga bog'lab ochiladi.
     const unsubAuth = onAuthStateChanged((user) => {
       stopWatching();
+      setIsAdmin(user?.role === "admin");
       if (!user) {
         setRegions([]);
         setDistricts([]);
@@ -139,8 +143,9 @@ export const ReferenceDataProvider = ({ children }: { children: ReactNode }) => 
       customersById: byId(customers),
       tagsById: byId(tags),
       loading: !Object.values(loaded).every(Boolean),
+      isAdmin,
     }),
-    [regions, districts, products, tags, lots, users, customers, loaded],
+    [regions, districts, products, tags, lots, users, customers, loaded, isAdmin],
   );
 
   return <RefDataContext.Provider value={value}>{children}</RefDataContext.Provider>;

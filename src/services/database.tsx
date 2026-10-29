@@ -17,6 +17,7 @@ import {
   LotExpense,
   WithId,
 } from "@interfaces/index";
+import type { ConfirmArgs } from "@/utils/leads";
 import { CollectionAdapter, faqAdapter, productAdapter } from "./adapters";
 import { cacheRead, cacheWrite } from "./cache";
 import {
@@ -373,6 +374,27 @@ const db = {
 };
 
 export default db;
+
+/**
+ * Leadni tasdiqlash (`crm.confirm_lead`): bitta tranzaksiyada mijoz (customerId null bo'lsa
+ * leaddan yaratiladi), har item uchun buyurtma va lead → 'confirmed'.
+ * Xato Postgres exception message bilan keladi (`utils/leads.ts: confirmErrorMessage`).
+ */
+export async function confirmLead(args: ConfirmArgs): Promise<{
+  customer_id: string;
+  order_ids: string[];
+}> {
+  const { data, error } = await supabase.rpc("confirm_lead", {
+    p_lead_id: args.leadId,
+    p_customer_id: args.customerId, // null — yangi mijoz ('' emas)
+    p_lot_id: args.lotId,
+    p_delivery_price: args.deliveryPrice,
+    p_item_prices: args.itemPrices,
+  });
+  if (error) throw error;
+  const res = (data ?? {}) as { customer_id?: string; order_ids?: string[] };
+  return { customer_id: res.customer_id ?? "", order_ids: res.order_ids ?? [] };
+}
 
 // Types
 export interface CollectionMethods<T> {

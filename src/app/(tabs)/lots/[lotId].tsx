@@ -20,7 +20,7 @@ const OrderDetail = () => {
   const { lotId } = useLocalSearchParams<{ lotId: string }>();
   const router = useRouter();
 
-  const { customers, products, users } = useRefData();
+  const { customers, products, users, isAdmin } = useRefData();
   const [lot, setLot] = useState<WithId<ProductLot> | null>(null);
   const [orders, setOrders] = useState<WithId<Order>[]>([]);
   const [expenses, setExpenses] = useState<WithId<LotExpense>[]>([]);
@@ -283,6 +283,7 @@ const OrderDetail = () => {
       ) : activeTab === "expenses" ? (
         <LotExpenseList
           expenses={expenses}
+          readOnly={!isAdmin}
           onAdd={() => {
             setEditExpense(null);
             setAddExpenseModal(true);
@@ -297,6 +298,7 @@ const OrderDetail = () => {
           lotId={lotId as string}
           lot={lot}
           items={lost}
+          readOnly={!isAdmin}
           onAdd={() => {
             setEditLost(null);
             setAddLostModal(true);

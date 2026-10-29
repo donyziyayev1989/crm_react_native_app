@@ -10,11 +10,13 @@ import {
   Path,
   useForm,
 } from "react-hook-form";
-import { Alert, FlatList, Pressable, Text, TextInput, View } from "react-native";
+import { Alert, FlatList, Pressable, Switch, Text, TextInput, View } from "react-native";
 
 export interface CrudField<F> {
   name: keyof F & string;
   placeholder: string;
+  /** "switch" — boolean maydon (placeholder yorliq sifatida ko'rsatiladi) */
+  type?: "text" | "switch";
   keyboardType?: "numeric" | "default";
   multiline?: boolean;
   required?: boolean;
@@ -36,11 +38,13 @@ interface SimpleCrudScreenProps<T extends { id?: string }, F extends FieldValues
   };
   renderItem: (
     item: T,
-    actions: { edit: () => void; remove: () => void },
+    actions: { edit: () => void; remove: () => void; readOnly: boolean },
   ) => React.ReactNode;
   modalTitle: (editing: T | null) => string;
   deleteMessage: string;
   ListEmptyComponent?: React.ReactElement | null;
+  /** Qo'shish tugmasi yashiriladi; renderItem `readOnly` bilan tahrir tugmalarini yashiradi */
+  readOnly?: boolean;
 }
 
 /**
@@ -60,6 +64,7 @@ function SimpleCrudScreen<T extends { id?: string }, F extends FieldValues>({
   modalTitle,
   deleteMessage,
   ListEmptyComponent,
+  readOnly = false,
 }: SimpleCrudScreenProps<T, F>) {
   const [modalVisible, setModalVisible] = useState(false);
   const [editing, setEditing] = useState<T | null>(null);
@@ -139,18 +144,21 @@ function SimpleCrudScreen<T extends { id?: string }, F extends FieldValues>({
               {renderItem(item, {
                 edit: () => openEdit(item),
                 remove: () => confirmDelete(item.id!),
+                readOnly,
               })}
             </>
           )}
         />
       )}
 
-      <Pressable
-        onPress={openCreate}
-        className="absolute bottom-6 right-6 w-14 h-14 bg-indigo-600 rounded-full justify-center items-center shadow-lg"
-      >
-        <MaterialIcons name="add" size={32} color="white" />
-      </Pressable>
+      {!readOnly && (
+        <Pressable
+          onPress={openCreate}
+          className="absolute bottom-6 right-6 w-14 h-14 bg-indigo-600 rounded-full justify-center items-center shadow-lg"
+        >
+          <MaterialIcons name="add" size={32} color="white" />
+        </Pressable>
+      )}
 
       <CustomModal
         visible={modalVisible}
@@ -168,26 +176,33 @@ function SimpleCrudScreen<T extends { id?: string }, F extends FieldValues>({
                 ? { required: field.requiredMessage ?? true }
                 : undefined
             }
-            render={({ field: { onChange, onBlur, value }, fieldState }) => (
-              <>
-                <TextInput
-                  placeholder={field.placeholder}
-                  onBlur={onBlur}
-                  onChangeText={onChange}
-                  value={value as string}
-                  keyboardType={field.keyboardType}
-                  multiline={field.multiline}
-                  className={`bg-gray-50 p-4 rounded-xl mb-3 border ${
-                    fieldState.error ? "border-red-400" : "border-gray-200"
-                  } ${field.multiline ? "min-h-[100px]" : ""}`}
-                />
-                {fieldState.error && field.requiredMessage ? (
-                  <Text className="text-red-500 text-xs mb-3 -mt-2 ml-1">
-                    {field.requiredMessage}
-                  </Text>
-                ) : null}
-              </>
-            )}
+            render={({ field: { onChange, onBlur, value }, fieldState }) =>
+              field.type === "switch" ? (
+                <View className="flex-row justify-between items-center bg-gray-50 p-4 rounded-xl mb-3 border border-gray-200">
+                  <Text className="text-gray-700">{field.placeholder}</Text>
+                  <Switch value={!!value} onValueChange={onChange} />
+                </View>
+              ) : (
+                <>
+                  <TextInput
+                    placeholder={field.placeholder}
+                    onBlur={onBlur}
+                    onChangeText={onChange}
+                    value={value as string}
+                    keyboardType={field.keyboardType}
+                    multiline={field.multiline}
+                    className={`bg-gray-50 p-4 rounded-xl mb-3 border ${
+                      fieldState.error ? "border-red-400" : "border-gray-200"
+                    } ${field.multiline ? "min-h-[100px]" : ""}`}
+                  />
+                  {fieldState.error && field.requiredMessage ? (
+                    <Text className="text-red-500 text-xs mb-3 -mt-2 ml-1">
+                      {field.requiredMessage}
+                    </Text>
+                  ) : null}
+                </>
+              )
+            }
           />
         ))}
 

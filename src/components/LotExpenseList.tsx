@@ -9,10 +9,12 @@ interface Props {
   expenses: WithId<LotExpense>[];
   onAdd: () => void;
   onEdit: (expense: WithId<LotExpense>) => void;
+  /** Operator: qo'shish/tahrirlash/o'chirish tugmalari yashirin */
+  readOnly?: boolean;
 }
 
 /** Partiya xarajatlari ro'yxati (lots/[lotId] "Xarajatlar" tabi) */
-const LotExpenseList = ({ expenses, onAdd, onEdit }: Props) => {
+const LotExpenseList = ({ expenses, onAdd, onEdit, readOnly = false }: Props) => {
   const total = useMemo(
     () => expenses.reduce((sum, e) => sum + (e.total_price || 0), 0),
     [expenses],
@@ -40,10 +42,12 @@ const LotExpenseList = ({ expenses, onAdd, onEdit }: Props) => {
         <Text style={styles.summaryValue}>{formatSum(total)}</Text>
       </View>
 
-      <Pressable style={[styles.btn, { backgroundColor: "#10b981" }]} onPress={onAdd}>
-        <MaterialIcons name="add-circle" size={20} color="#fff" />
-        <Text style={styles.btnText}>Xarajat qo'shish</Text>
-      </Pressable>
+      {!readOnly && (
+        <Pressable style={[styles.btn, { backgroundColor: "#10b981" }]} onPress={onAdd}>
+          <MaterialIcons name="add-circle" size={20} color="#fff" />
+          <Text style={styles.btnText}>Xarajat qo'shish</Text>
+        </Pressable>
+      )}
 
       {expenses.length === 0 ? (
         <View style={styles.empty}>
@@ -61,14 +65,16 @@ const LotExpenseList = ({ expenses, onAdd, onEdit }: Props) => {
             </View>
             <View style={{ alignItems: "flex-end" }}>
               <Text style={styles.itemTotal}>{formatSum(ex.total_price)}</Text>
-              <View style={styles.actions}>
-                <Pressable onPress={() => onEdit(ex)}>
-                  <MaterialIcons name="edit" size={18} color="#6366f1" />
-                </Pressable>
-                <Pressable onPress={() => confirmDelete(ex.id)}>
-                  <MaterialIcons name="delete" size={18} color="#ef4444" />
-                </Pressable>
-              </View>
+              {!readOnly && (
+                <View style={styles.actions}>
+                  <Pressable onPress={() => onEdit(ex)}>
+                    <MaterialIcons name="edit" size={18} color="#6366f1" />
+                  </Pressable>
+                  <Pressable onPress={() => confirmDelete(ex.id)}>
+                    <MaterialIcons name="delete" size={18} color="#ef4444" />
+                  </Pressable>
+                </View>
+              )}
             </View>
           </View>
         ))
