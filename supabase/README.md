@@ -30,13 +30,13 @@ Hech qaysi qadam avtomatik bajarilmagan; har biri uchun tasdiq kerak. Tartibni b
 2. **Production backup** (Dashboard → Database → Backups yoki `supabase db dump`).
 3. **Pre-flight so'rovlar** (`db push` dan oldin; natijalarni yozib qo'ying):
    - `select count(*) from crm.products where price < 0;` — manfiy legacy narx `0012` ni to'xtatadi; avval tuzating (natija 0 bo'lsin).
-   - `select id, created_at from crm.faqs where created_at !~ '^\d{4}-';` — noto'g'ri vaqtlar `now()` ga tushadi; ko'rib chiqing.
+   - `select id, created_at from crm.faqs where created_at !~ '^\d{4}-';` — eski matn ustuni (`0013` dan oldin `crm.faqs`, keyin `crm.faqs_legacy`) tekshiriladi; noto'g'ri vaqtlar `now()` ga tushadi; ko'rib chiqing.
    - `select count(*) from public.orders;` va `select count(*) from crm.orders;`
    - `select sum(product_price * product_count) from crm.orders;`
    - `select count(*) from crm.products;` va `select count(*) from public.products;`
 4. `supabase db push` (`0010..0016`). Production'da Dashboard → Settings → API → **Exposed schemas** da `crm` bo'lishi shart.
    **Muhim:** `0010` bot deploy'i tayyor bo'lmaguncha jonli bo'lmasin — `source` ustuni `not null`, eski bot `crm.leads` ga `source`siz yozsa xato beradi.
-   4-, 5-qadamlarni bitta oynada bajaring.
+   4–6-qadamlarni (db push, sayt deploy, Edge Function deploy) bitta oynada bajaring.
 5. **Saytni deploy qiling** (u endi `public.create_lead` ni chaqiradi).
 6. **Edge Function'larni deploy qiling:** `supabase functions deploy telegram-webhook send-telegram` (bot endi `source`/`items` yozadi va `public.products`/`public.faqs` dan o'qiydi).
 7. **Yangi APK:** `eas build -p android --profile production`, tarqating.
