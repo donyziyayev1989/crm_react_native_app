@@ -5,7 +5,7 @@ Bu papka kurka.uz bilan **bitta Supabase loyihasi** uchun CRM qismini saqlaydi.
 - `migrations/0006..0016` — `crm` sxemasi, RLS, Realtime, RPC (`0006..0009`), so'ng birlashtirilgan baza (`0010..0016`):
   yagona `crm.leads`, umumiy `public` jadvallar (lots, tags, lost_products, lot_expenses, products, faqs), `public.create_lead`,
   eski sayt buyurtmalarini leadga ko'chirish, `crm.confirm_lead`. Fayllar kurka.uz repo'sidagi nusxalar bilan **bir xil** bo'lishi shart
-  (`0099_cleanup_after_verification.sql` faqat kurka.uz'da turadi va bu yerga nusxalanmaydi).
+  (`0099_cleanup_after_verification.sql` faqat kurka.uz'da, `supabase/pending/` da turadi va bu yerga nusxalanmaydi).
   `0001..0005` (kurka.uz repo'sida) dan keyin qo'llanadi (`public.profiles`, `public.app_role()` kerak).
 - `functions/` — Telegram bot (`telegram-webhook`) va `send-telegram`. Batafsil: `functions/README.md`.
 
@@ -29,14 +29,18 @@ Hech qaysi qadam avtomatik bajarilmagan; har biri uchun tasdiq kerak. Tartibni b
 1. **Lokal mashq.** Production dump'ini lokal stekka tiklab, `0010..0016` ni shu yerda sinab ko'ring (pre-flight va tekshiruv so'rovlari bilan).
 2. **Production backup** (Dashboard → Database → Backups yoki `supabase db dump`).
 3. **Pre-flight so'rovlar** (`db push` dan oldin; natijalarni yozib qo'ying):
+   - `npx supabase migration list` faqat `0010..0016` ni pending ko'rsatishi shart; `0099` `supabase/pending/` da turadi
+     (`migrations/` da emas), shuning uchun `db push` uni qo'llamaydi. Ro'yxatda `0099` bo'lsa — to'xtang.
    - `select count(*) from crm.products where price < 0;` — manfiy legacy narx `0012` ni to'xtatadi; avval tuzating (natija 0 bo'lsin).
    - `select id, created_at from crm.faqs where created_at !~ '^\d{4}-';` — eski matn ustuni (`0013` dan oldin `crm.faqs`, keyin `crm.faqs_legacy`) tekshiriladi; noto'g'ri vaqtlar `now()` ga tushadi; ko'rib chiqing.
    - `select count(*) from public.orders;` va `select count(*) from crm.orders;`
    - `select sum(product_price * product_count) from crm.orders;`
    - `select count(*) from crm.products;` va `select count(*) from public.products;`
 4. `supabase db push` (`0010..0016`). Production'da Dashboard → Settings → API → **Exposed schemas** da `crm` bo'lishi shart.
-   **Muhim:** `0010` bot deploy'i tayyor bo'lmaguncha jonli bo'lmasin — `source` ustuni `not null`, eski bot `crm.leads` ga `source`siz yozsa xato beradi.
-   4–6-qadamlarni (db push, sayt deploy, Edge Function deploy) bitta oynada bajaring.
+   4–6-qadamlarni (db push, sayt deploy, Edge Function deploy) bitta oynada bajaring. Shu oynada eski bot ishlashda davom etadi:
+   `0010` `source` ga vaqtinchalik `default 'telegram'` beradi (ustun `not null` va check bilan qoladi), shuning uchun eski bot
+   `source`siz yozgan leadlar `source = 'telegram'` bo'lib tushadi. Ularda `items` `[]` va `has_unpriced` `false` qoladi (eski
+   `product_*` ustunlari to'ldiriladi; ilova va `crm.confirm_lead` ularni o'qiydi). Default `0099` da olib tashlanadi.
 5. **Saytni deploy qiling** (u endi `public.create_lead` ni chaqiradi).
 6. **Edge Function'larni deploy qiling:** `supabase functions deploy telegram-webhook send-telegram` (bot endi `source`/`items` yozadi va `public.products`/`public.faqs` dan o'qiydi).
 7. **Yangi APK:** `eas build -p android --profile production`, tarqating.
@@ -47,9 +51,10 @@ Hech qaysi qadam avtomatik bajarilmagan; har biri uchun tasdiq kerak. Tartibni b
    - [ ] Har bir `crm.orders.product_id` `public.products` da mavjud.
    - [ ] `select * from crm.leads where source = 'website' limit 5;` — qiymatlar mantiqli.
    - [ ] Cutover paytida `select crm.backfill_site_orders_to_leads();` ni **yana bir marta** ishga tushiring (service role) — push va sayt deploy'i orasida kelgan buyurtmalarni oladi (idempotent).
+   - [ ] Yangi bot deploy qilingach `select crm.leads_backfill();` ni yana bir marta ishga tushiring (service role) — oynada eski bot yozgan leadlarga `items` va `has_unpriced = true` qo'yadi (idempotent).
    - [ ] Saytdan test buyurtma → lead paydo bo'ladi; Telegram bot orqali test lead (`source = 'telegram'`); ilovada leadni tasdiqlash ishlaydi.
    - [ ] Operator ilovada mahsulot/teg/partiya/FAQ ni o'zgartira olmaydi, admin o'zgartira oladi.
-9. **`0099` faqat tasdiqdan keyin**, alohida (batafsil quyida).
+9. **`0099` faqat tasdiqdan keyin**, alohida: kurka.uz'da `git mv supabase/pending/0099_cleanup_after_verification.sql supabase/migrations/`, so'ng `supabase db push` (batafsil quyida).
 
 Qolgan umumiy sozlamalar (birinchi marta o'tkazishda): Dashboard → Authentication → Providers → **Google** ni yoqing,
 **Authorized Client IDs** ga `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` (Web client ID) ni kiriting (native `idToken` da nonce yo'q, "Skip nonce checks" kerak bo'lishi mumkin);
@@ -62,16 +67,20 @@ bot sirlari: `supabase secrets set TELEGRAM_BOT_TOKEN=... TELEGRAM_WEBHOOK_SECRE
 
 - Eski APK build'lari `crm.*` compat view'lari orqali ishlashda davom etadi, lekin lots/tags/products/faqs/lost_products/lot_expenses uchun **Realtime olmaydi** (view'lar publication'da emas).
 - Operatorlar endi mahsulot, teg, partiya, partiya xarajati va FAQ ni yoza olmaydi (RLS bo'yicha faqat admin); yangi ilova bu boshqaruvlarni yashiradi.
-- 6 ta sayt tumani CRM'da mos kelmaydi va slug sifatida o'tadi: `boston` (Andijon), `ozbekiston` (Farg'ona), `davlatobod`, `yangi-namangan` (Namangan), `toyloq` → CRM `Tayloq`, `boka` → CRM `Buka`.
-  Tuzatish: `crm.site_districts` ga qator qo'shing yoki CRM tuman nomlarini o'zgartiring.
+- 4 ta sayt tumani CRM'da mos kelmaydi va slug sifatida o'tadi: `boston` (Andijon), `ozbekiston` (Farg'ona), `davlatobod`, `yangi-namangan` (Namangan).
+  (`toyloq` → `Tayloq` va `boka` → `Buka` `crm.site_districts` da override qilingan.)
+  Tuzatish: `crm.site_districts` ga qator qo'shing (va kurka.uz `src/lib/crm-regions.ts` dagi override'ga) yoki CRM tuman nomlarini o'zgartiring.
 - Sayt admin panelidagi "Mijozlar" bo'limi mahsulot filtrini va buyurtmalar soni ustunlarini yo'qotdi.
 
 ### 0099 faqat tasdiqdan keyin
 
-`kurka.uz/supabase/migrations/0099_cleanup_after_verification.sql` **qaytarib bo'lmaydi** va bu repoga nusxalanmaydi. U
-`public.create_order`, `public.orders/order_items/order_status_history/customers`, compat view'lar (`crm.products/faqs/lots/tags/lost_products/lot_expenses`),
-`crm.products_legacy`, `crm.faqs_legacy`, `public.product_id_map` va bir martalik funksiyalarni (`merge_*`, `backfill_site_orders_to_leads`, `leads_backfill`) o'chiradi.
-Faqat yuqoridagi tekshiruv ro'yxati imzolangach, yangi APK keng tarqalgach va yangi backup olingach, alohida `supabase db push` bilan qo'llang.
+`kurka.uz/supabase/pending/0099_cleanup_after_verification.sql` **qaytarib bo'lmaydi** va bu repoga nusxalanmaydi. U ataylab
+`migrations/` dan tashqarida turadi, shunda `db push`/`db reset` uni tasodifan qo'llamaydi. U
+`public.create_order`, `public.orders/order_items/order_status_history/customers` (+ `record_order_status`, `guard_operator_order_update`, `public.order_status` turi),
+compat view'lar (`crm.products/faqs/lots/tags/lost_products/lot_expenses`), `crm.products_legacy`, `crm.faqs_legacy`, `public.product_id_map`
+va bir martalik funksiyalarni (`merge_*`, `backfill_site_orders_to_leads`, `leads_backfill`) o'chiradi hamda `crm.leads.source` dagi vaqtinchalik default'ni olib tashlaydi.
+Faqat yuqoridagi tekshiruv ro'yxati imzolangach, yangi APK keng tarqalgach va yangi backup olingach: kurka.uz'da
+`git mv supabase/pending/0099_cleanup_after_verification.sql supabase/migrations/`, commit, so'ng alohida `supabase db push` bilan qo'llang.
 
 ## Ma'lum cheklovlar
 

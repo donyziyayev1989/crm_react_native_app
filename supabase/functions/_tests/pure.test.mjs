@@ -82,7 +82,8 @@ function fakeClient(resolve) {
   };
 }
 
-test("bot: lead source=telegram + items, mahsulotlar public.products dan (published)", async () => {
+// Butun buyurtma oqimi (fake klientlar bilan); yozilgan leadlarni qaytaradi.
+async function botFlow(product) {
   const { createHandler } = await import("../_shared/bot.ts");
   let session = null;
   const leads = [];
@@ -100,7 +101,6 @@ test("bot: lead source=telegram + items, mahsulotlar public.products dan (publis
     }
     return { data: null, error: null };
   });
-  const product = { id: "p1", price: 120000, name: "Kurka jo'ja" };
   // maybeSingle so'rovi uchun bitta obyekt, ro'yxat uchun massiv
   const pubSingle = fakeClient((q) =>
     q.ops.some((o) => o[0] === "maybeSingle") ? { data: product, error: null } : { data: [product], error: null },
@@ -130,10 +130,17 @@ test("bot: lead source=telegram + items, mahsulotlar public.products dan (publis
   await post({ text: "Kurka jo'ja" });
   await post({ text: "50" });
   await post({ location: { latitude: 41.5, longitude: 71.2 } });
+  return { leads, crm, pubSingle };
+}
+
+test("bot: lead source=telegram + items, mahsulotlar public.products dan (published)", async () => {
+  const { leads, crm, pubSingle } = await botFlow({ id: "p1", price: 120000, name: "Kurka jo'ja" });
 
   assert.equal(leads.length, 1);
   assert.equal(leads[0].source, "telegram");
   assert.deepEqual(leads[0].items, [{ product_id: "p1", name: "Kurka jo'ja", price: 120000, quantity: 50 }]);
+  assert.equal(leads[0].total, 6000000);
+  assert.equal(leads[0].has_unpriced, false);
   assert.equal(leads[0].product_id, "p1");
   assert.equal(leads[0].product_count, 50);
   // mahsulotlar faqat public sxemadan va faqat published
@@ -143,4 +150,12 @@ test("bot: lead source=telegram + items, mahsulotlar public.products dan (publis
     assert.ok(q.ops.some((o) => o[0] === "eq" && o[1] === "published" && o[2] === true));
   }
   assert.ok(!crm.calls.some((q) => q.table === "products"));
+});
+
+test("bot: narxsiz mahsulot -> total 0, has_unpriced true (Narx kelishiladi)", async () => {
+  const { leads } = await botFlow({ id: "p2", price: null, name: "Kurka jo'ja" });
+  assert.equal(leads.length, 1);
+  assert.deepEqual(leads[0].items, [{ product_id: "p2", name: "Kurka jo'ja", price: null, quantity: 50 }]);
+  assert.equal(leads[0].total, 0);
+  assert.equal(leads[0].has_unpriced, true);
 });

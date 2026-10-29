@@ -308,20 +308,22 @@ const LotMapView: React.FC<LotMapViewProps> = ({
       const newLocations = new Map<string, Coordinate>();
 
       for (const order of Object.values(ordersRef.current)) {
-        if (order.location) {
+        const ol = order.location;
+        if (ol?.lat != null && ol.lng != null) {
           newLocations.set(order.id, {
-            latitude: order.location.lat,
-            longitude: order.location.lng,
+            latitude: ol.lat,
+            longitude: ol.lng,
           });
           continue;
         }
 
         const customer = customersRef.current[order.customer_id];
         if (!customer) continue;
-        if (customer.location) {
+        const cl = customer.location;
+        if (cl?.lat != null && cl.lng != null) {
           newLocations.set(order.id, {
-            latitude: customer.location.lat,
-            longitude: customer.location.lng,
+            latitude: cl.lat,
+            longitude: cl.lng,
           });
           continue;
         }

@@ -2,6 +2,8 @@
 -- har bir mahsulot uchun crm.orders qatori va lead -> 'confirmed'.
 -- Buyurtma maydonlari ilovadagi OrderModal bilan bir xil: state 'new', rate 0, date = to'liq ISO vaqt,
 -- user_id = joriy foydalanuvchi. customers.order_ids (tarixiy partiya ID'lari) o'zgartirilmaydi.
+-- location: leaddagi {lat,lng} + sayt manzili (address bo'sh bo'lmasa) -> {lat?,lng?,address};
+-- ikkalasi ham yo'q bo'lsa null. Yangi mijoz va har bir buyurtmaga yoziladi.
 -- Qayta ishga tushirishga chidamli (create or replace).
 --
 -- javob: { customer_id, order_ids: [text] }   -- order_ids items tartibida
@@ -36,6 +38,7 @@ declare
   v_order_ids text[] := '{}';
   v_date text := to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"');
   v_line record;
+  v_location jsonb;
 begin
   if not crm.is_staff() then
     raise exception 'not_staff' using errcode = '42501';
@@ -89,6 +92,13 @@ begin
     raise exception 'unpriced_item' using errcode = 'P0001', detail = coalesce(v_unpriced, '');
   end if;
 
+  -- Sayt leadlarida koordinata bo'lmasligi mumkin, lekin matnli manzil bor: uni yo'qotmaymiz.
+  v_location := case
+    when nullif(btrim(coalesce(v_lead.address, '')), '') is null then v_lead.location
+    else (case when jsonb_typeof(v_lead.location) = 'object' then v_lead.location else '{}'::jsonb end)
+      || jsonb_build_object('address', v_lead.address)
+  end;
+
   if p_customer_id is not null then
     select id into v_customer_id from crm.customers where id = p_customer_id;
     if not found then
@@ -101,7 +111,7 @@ begin
       v_lead.phone,
       coalesce(v_lead.region_name, ''),
       v_lead.district_name,
-      v_lead.location,
+      v_location,
       nullif(v_lead.telegram_id, ''),
       auth.uid()
     )
@@ -131,7 +141,7 @@ begin
       auth.uid(),
       case when v_line.ord = 1 then coalesce(p_delivery_price, 0) else 0 end,
       v_lead.note,
-      v_lead.location
+      v_location
     )
     returning id into v_order_id;
     v_order_ids := v_order_ids || v_order_id;

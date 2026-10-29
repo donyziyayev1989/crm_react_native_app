@@ -106,7 +106,7 @@ const CustomerDetail = () => {
             </View>
           </View>
         ) : null}
-        {customer.location && (
+        {customer.location?.lat != null && customer.location?.lng != null && (
           <View style={styles.row}>
             <Text style={styles.label}>Lokatsiya:</Text>
             <Pressable

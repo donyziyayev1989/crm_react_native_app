@@ -270,18 +270,24 @@ export function createHandler(deps: BotDeps) {
       const productId = (sessionData.product_id as string) || null;
       const productCount = (sessionData.product_count as number) || 0;
       const productName = (sessionData.product_name as string) || "Noma'lum mahsulot";
+      const price = productId ? ((sessionData.product_price as number | null) ?? null) : null;
       const items = productId
         ? [{
           product_id: productId,
           name: productName,
-          price: (sessionData.product_price as number | null) ?? null,
+          price,
           quantity: productCount,
         }]
         : [];
+      // Sayt leadlari kabi: narxsiz (yoki mahsulotsiz) bo'lsa "Narx kelishiladi", jami 0
+      const total = price == null ? 0 : price * productCount;
+      const hasUnpriced = price == null;
 
       const { error } = await crm.from("leads").insert({
         source: "telegram",
         items,
+        total,
+        has_unpriced: hasUnpriced,
         name: (sessionData.name as string) || "Noma'lum",
         phone: sessionData.phoneNumber,
         telegram_id: sessionData.telegram_id,

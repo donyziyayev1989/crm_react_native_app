@@ -123,6 +123,8 @@ test("bot: buyurtma oqimi → lead, keyin chat xabari", { skip }, async (t) => {
   assert.equal(lead.items[0].name, "Kurka jo'ja");
   assert.equal(Number(lead.items[0].price), 15000);
   assert.equal(lead.items[0].quantity, 50);
+  assert.equal(Number(lead.total), 15000 * 50);
+  assert.equal(lead.has_unpriced, false);
   assert.equal(lead.region_name, "Namangan");
   assert.equal(lead.district_name, "Chust");
   assert.deepEqual(lead.location, { lat: 41.5, lng: 71.2 });

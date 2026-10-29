@@ -38,7 +38,8 @@ const Leads = () => {
         setLeads(data as WithId<Lead>[]);
         setLoading(false);
       },
-      orderBy("date", "desc"),
+      // date aralash formatda (YYYY-MM-DD va to'liq ISO): tartib raqam bo'yicha
+      orderBy("number", "desc"),
     );
 
     return () => unsubscribe();
@@ -151,8 +152,9 @@ const Leads = () => {
                 )}
                 {item.total != null && (
                   <Text className="text-gray-800 font-semibold mt-1">
-                    Jami: {formatSum(item.total)}
-                    {item.has_unpriced ? " + narx kelishiladi" : ""}
+                    {item.has_unpriced && Number(item.total) === 0
+                      ? "Narx kelishiladi"
+                      : `Jami: ${formatSum(item.total)}${item.has_unpriced ? " + narx kelishiladi" : ""}`}
                   </Text>
                 )}
                 <View className="flex-row items-center gap-2 justify-between w-full mt-1">

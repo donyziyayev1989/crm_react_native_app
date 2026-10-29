@@ -87,9 +87,10 @@ export interface Order {
   user_id: string; // ref → users
   delivery_price: number;
   note?: string;
+  // Sayt leadidan tasdiqlanganda faqat { address } bo'lishi mumkin (koordinatasiz)
   location?: {
-    lat: number;
-    lng: number;
+    lat?: number;
+    lng?: number;
     address?: string;
   };
 }
@@ -105,9 +106,10 @@ export interface Customer {
   note: string;
   rates: number;
   order_ids: string[]; // ref → lots/orders (historical)
+  // Sayt leadidan tasdiqlanganda faqat { address } bo'lishi mumkin (koordinatasiz)
   location?: {
-    lat: number;
-    lng: number;
+    lat?: number;
+    lng?: number;
     address?: string;
   };
   telegram_id?: string;

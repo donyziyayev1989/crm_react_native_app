@@ -43,7 +43,7 @@ begin
   end if;
 end $$;
 
--- ─── Eski jadval -> crm.products_legacy (o'chirilmaydi, RLS qoladi) ─────────
+-- ─── Eski jadval -> crm.products_legacy (o'chirilmaydi, RLS qoladi, yozish huquqi olinadi) ─
 do $$
 begin
   if exists (
@@ -57,6 +57,14 @@ begin
       alter publication supabase_realtime drop table crm.products;
     end if;
     alter table crm.products rename to products_legacy;
+  end if;
+end $$;
+
+-- Eski jadval faqat o'qish uchun (0013 dagi crm.faqs_legacy kabi). Qayta ishga tushirishga chidamli.
+do $$
+begin
+  if to_regclass('crm.products_legacy') is not null then
+    revoke insert, update, delete, truncate on crm.products_legacy from authenticated;
   end if;
 end $$;
 

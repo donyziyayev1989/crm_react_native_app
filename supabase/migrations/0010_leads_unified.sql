@@ -20,6 +20,10 @@ update crm.leads set source = 'telegram' where source is null;
 
 alter table crm.leads alter column source set not null;
 
+-- Vaqtinchalik default: cutover oynasida eski bot (source yozmaydi) lead qo'shishda davom etsin.
+-- 0099 (supabase/pending/) uni olib tashlaydi.
+alter table crm.leads alter column source set default 'telegram';
+
 do $$
 begin
   if not exists (
@@ -31,7 +35,8 @@ begin
   end if;
 end $$;
 
--- Eski qatorlarni to'ldiradi: items (product_* dan) va number (date bo'yicha tartibda).
+-- Eski qatorlarni to'ldiradi: items (product_* dan; narx noma'lum -> has_unpriced = true,
+-- total 0 qoladi) va number (date bo'yicha tartibda).
 create or replace function crm.leads_backfill()
 returns void
 language plpgsql
@@ -45,7 +50,8 @@ begin
     'name', product_name,
     'price', null,
     'quantity', product_count
-  ))
+  )),
+  has_unpriced = true
   where items = '[]'::jsonb and product_id is not null;
 
   select coalesce(max(number), 0) into base from crm.leads;

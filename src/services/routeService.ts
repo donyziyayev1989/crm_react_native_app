@@ -12,7 +12,11 @@ export const RouteService = {
    * @param startLocation Boshlang'ich nuqta (masalan, ombor yoki hozirgi joy)
    */
   optimizeRoute: (customers: Customer[], startLocation: { lat: number; lng: number }) => {
-    const unvisited = [...customers].filter(c => c.location);
+    // Faqat koordinatasi bor mijozlar (sayt leadidan faqat { address } kelishi mumkin)
+    const unvisited = [...customers].filter(
+      (c): c is Customer & { location: { lat: number; lng: number } } =>
+        c.location?.lat != null && c.location?.lng != null,
+    );
     const route: Customer[] = [];
     let currentPos = startLocation;
 
@@ -23,7 +27,7 @@ export const RouteService = {
       for (let i = 0; i < unvisited.length; i++) {
         const dist = RouteService.calculateDistance(
           currentPos,
-          unvisited[i].location!
+          unvisited[i].location
         );
         if (dist < minDistance) {
           minDistance = dist;
@@ -33,7 +37,7 @@ export const RouteService = {
 
       const nextCustomer = unvisited.splice(closestIndex, 1)[0];
       route.push(nextCustomer);
-      currentPos = nextCustomer.location!;
+      currentPos = nextCustomer.location;
     }
 
     return route;

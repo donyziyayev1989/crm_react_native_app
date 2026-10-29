@@ -32,7 +32,8 @@ $$;
 grant execute on function crm.region_name_from_site_id(text) to anon, authenticated, service_role;
 
 -- ─── Sayt tuman slug'i -> crm.districts.name ────────────────────────────────
--- Manba: src/lib/uz-districts.ts (uz nomi, " tumani"/" shahri"/" shahar" qo'shimchasiz, ASCII apostrof).
+-- Manba: src/lib/uz-districts.ts (uz nomi, " tumani"/" shahri"/" shahar" qo'shimchasiz, ASCII apostrof),
+-- CRM imlosi boshqacha bo'lgan tumanlar uchun override (src/lib/crm-regions.ts CRM_DISTRICT_OVERRIDES).
 -- Faqat service_role (RLS yoqilgan, siyosat yo'q).
 create table if not exists crm.site_districts (
   region_site_id text not null,
@@ -154,7 +155,7 @@ insert into crm.site_districts (region_site_id, slug, name) values
   ,('samarkand', 'payariq', 'Payariq')
   ,('samarkand', 'qoshrabot', 'Qo''shrabot')
   ,('samarkand', 'samarqand', 'Samarqand')
-  ,('samarkand', 'toyloq', 'Toyloq')
+  ,('samarkand', 'toyloq', 'Tayloq')  -- CRM imlosi (0009: sam_tayloq), sayt 'Toyloq'
   ,('samarkand', 'urgut', 'Urgut')
   -- sirdarya
   ,('sirdarya', 'boyovut', 'Boyovut')
@@ -198,7 +199,7 @@ insert into crm.site_districts (region_site_id, slug, name) values
   ,('fergana', 'yozyovon', 'Yozyovon')
   -- tashkent
   ,('tashkent', 'bekobod', 'Bekobod')
-  ,('tashkent', 'boka', 'Bo''ka')
+  ,('tashkent', 'boka', 'Buka')  -- CRM imlosi (0009: tv_buka), sayt 'Bo''ka'
   ,('tashkent', 'bostonliq', 'Bo''stonliq')
   ,('tashkent', 'chinoz', 'Chinoz')
   ,('tashkent', 'ohangaron', 'Ohangaron')

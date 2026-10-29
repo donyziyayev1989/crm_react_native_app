@@ -103,8 +103,9 @@ export default function LeadDetailScreen() {
       ))}
       {lead.total != null && (
         <Text style={styles.total}>
-          Jami: {formatSum(lead.total)}
-          {lead.has_unpriced ? " + narx kelishiladi" : ""}
+          {lead.has_unpriced && Number(lead.total) === 0
+            ? "Narx kelishiladi"
+            : `Jami: ${formatSum(lead.total)}${lead.has_unpriced ? " + narx kelishiladi" : ""}`}
         </Text>
       )}
       {lead.note ? <Text style={styles.note}>{lead.note}</Text> : null}
