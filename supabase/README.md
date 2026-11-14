@@ -56,8 +56,7 @@ Hech qaysi qadam avtomatik bajarilmagan; har biri uchun tasdiq kerak. Tartibni b
    - [ ] Operator ilovada mahsulot/teg/partiya/FAQ ni o'zgartira olmaydi, admin o'zgartira oladi.
 9. **`0099` faqat tasdiqdan keyin**, alohida: kurka.uz'da `git mv supabase/pending/0099_cleanup_after_verification.sql supabase/migrations/`, so'ng `supabase db push` (batafsil quyida).
 
-Qolgan umumiy sozlamalar (birinchi marta o'tkazishda): Dashboard → Authentication → Providers → **Google** ni yoqing,
-**Authorized Client IDs** ga `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` (Web client ID) ni kiriting (native `idToken` da nonce yo'q, "Skip nonce checks" kerak bo'lishi mumkin);
+Qolgan umumiy sozlamalar (birinchi marta o'tkazishda): ilova saytdagi kabi email + parol bilan kiradi (Authentication → Providers → **Email** yoqilgan bo'lsin; xodim parolini admin beradi);
 Firebase ma'lumotini ko'chirish: `scripts/migrate-firestore-to-supabase/README.md` (avval `--dry-run`); ilovaga `.env` va EAS `production` env ga
 `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY` (service_role hech qachon); `EXPO_PUBLIC_BOT_TOKEN` ni o'chiring va eski bot tokenini @BotFather'da yangilang;
 bot sirlari: `supabase secrets set TELEGRAM_BOT_TOKEN=... TELEGRAM_WEBHOOK_SECRET=...`, `setWebhook` (`functions/README.md`). Hammasi tekshirilgach

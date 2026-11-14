@@ -99,13 +99,25 @@ export function onAuthStateChanged(cb: (user: AppUser | null) => void): () => vo
   };
 }
 
-/** Google `idToken` bilan kirish. Staff bo'lmasa NoAccessError tashlaydi. */
-export async function signInWithGoogleIdToken(idToken: string): Promise<AppUser> {
-  const { data, error } = await supabase.auth.signInWithIdToken({
-    provider: "google",
-    token: idToken,
+export class InvalidCredentialsError extends Error {
+  constructor() {
+    super("Email yoki parol noto'g'ri.");
+    this.name = "InvalidCredentialsError";
+  }
+}
+
+/** Email + parol bilan kirish (saytdagi kabi). Staff bo'lmasa NoAccessError tashlaydi. */
+export async function signInWithEmail(email: string, password: string): Promise<AppUser> {
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: email.trim().toLowerCase(),
+    password,
   });
-  if (error) throw error;
+  if (error) {
+    if (error.code === "invalid_credentials" || error.message === "Invalid login credentials") {
+      throw new InvalidCredentialsError();
+    }
+    throw error;
+  }
   const user = await resolveUser(data.session); // NoAccessError tashlashi mumkin
   publish(user);
   return user as AppUser;

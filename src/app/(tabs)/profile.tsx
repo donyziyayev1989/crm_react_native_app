@@ -2,7 +2,7 @@ import Card from "@/components/Card";
 import {
   AppUser,
   onAuthStateChanged,
-  signInWithGoogleIdToken,
+  signInWithEmail,
   signOut,
 } from "@/supabase/auth";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
@@ -12,44 +12,21 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 
 export default function Profile() {
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
-
-  // Safe GoogleSignin access
-  const getGoogleSignin = () => {
-    try {
-      return require("@react-native-google-signin/google-signin").GoogleSignin;
-    } catch (e) {
-      return null;
-    }
-  };
-
-  useEffect(() => {
-    const initGoogle = async () => {
-      if (Platform.OS !== "web") {
-        try {
-          const GSignin = getGoogleSignin();
-          if (GSignin) {
-            GSignin.configure({
-              webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || "",
-            });
-          }
-        } catch (e) {
-          console.error("GoogleSignin init error:", e);
-        }
-      }
-    };
-    initGoogle();
-  }, []);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged((currentUser) => {
@@ -60,40 +37,19 @@ export default function Profile() {
   }, []);
 
   const signIn = async () => {
+    if (!email.trim() || !password) {
+      Alert.alert("Xatolik", "Email va parolni kiriting.");
+      return;
+    }
     try {
-      if (Platform.OS === ("web" as string)) {
-        Alert.alert(
-          "Xato",
-          "Web versiyada Google orqali kirish hali qo'shilmagan",
-        );
-        return;
-      }
-
-      const GSignin = getGoogleSignin();
-      if (!GSignin) {
-        throw new Error(
-          "Google Sign-In moduli topilmadi. Ilovani qayta build qiling.",
-        );
-      }
-
-      setLoading(true);
-      await GSignin.hasPlayServices();
-      const userInfo = await GSignin.signIn();
-      const idToken = userInfo.data?.idToken;
-
-      if (!idToken) throw new Error("No ID Token found");
-
+      setSubmitting(true);
       // Faqat profiles jadvalida faol xodim bo'lganlar kiradi (aks holda NoAccessError)
-      await signInWithGoogleIdToken(idToken);
-
-      Alert.alert("Tizimga kirildi", "Muvaffaqiyatli tizimga kirdingiz!");
+      await signInWithEmail(email, password);
+      setPassword("");
     } catch (error: any) {
-      Alert.alert(
-        "Xatolik",
-        "Tizimga kirishda xatolik yuz berdi: " + error.message,
-      );
+      Alert.alert("Xatolik", error.message || "Tizimga kirishda xatolik yuz berdi.");
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
@@ -101,10 +57,6 @@ export default function Profile() {
     try {
       setLoading(true);
       await signOut();
-      const GSignin = getGoogleSignin();
-      if (Platform.OS !== ("web" as string) && GSignin) {
-        await GSignin.signOut();
-      }
     } catch (error: any) {
       console.error(error);
       Alert.alert("Xatolik", "Tizimdan chiqishda xatolik yuz berdi.");
@@ -167,9 +119,67 @@ export default function Profile() {
               Xaridlar va mijozlarni tizimga qo'shish uchun hisobingizga kiring.
             </Text>
 
-            <Pressable style={styles.googleBtn} onPress={signIn}>
-              <MaterialIcons name="g-translate" size={20} color="#fff" />
-              <Text style={styles.googleBtnText}>Google orqali kirish</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Email"
+              placeholderTextColor="#9ca3af"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="email"
+              textContentType="emailAddress"
+              returnKeyType="next"
+              editable={!submitting}
+            />
+
+            <View style={styles.passwordRow}>
+              <TextInput
+                style={styles.passwordInput}
+                placeholder="Parol"
+                placeholderTextColor="#9ca3af"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="password"
+                textContentType="password"
+                returnKeyType="go"
+                onSubmitEditing={signIn}
+                editable={!submitting}
+              />
+              <Pressable
+                onPress={() => setShowPassword((v) => !v)}
+                hitSlop={8}
+                style={styles.eyeBtn}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  showPassword ? "Parolni yashirish" : "Parolni ko'rsatish"
+                }
+              >
+                <MaterialIcons
+                  name={showPassword ? "visibility-off" : "visibility"}
+                  size={22}
+                  color="#6b7280"
+                />
+              </Pressable>
+            </View>
+
+            <Pressable
+              style={[styles.loginBtn, submitting && styles.loginBtnDisabled]}
+              onPress={signIn}
+              disabled={submitting}
+            >
+              {submitting ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <MaterialIcons name="login" size={20} color="#fff" />
+                  <Text style={styles.loginBtnText}>Kirish</Text>
+                </>
+              )}
             </Pressable>
           </View>
         </Card>
@@ -238,16 +248,45 @@ const styles = StyleSheet.create({
     fontSize: 15,
     paddingHorizontal: 16,
   },
-  googleBtn: {
+  input: {
+    width: "100%",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: "#111827",
+    backgroundColor: "#fff",
+  },
+  passwordRow: {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderRadius: 12,
+    backgroundColor: "#fff",
+  },
+  passwordInput: {
+    flex: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: "#111827",
+  },
+  eyeBtn: { paddingHorizontal: 12, paddingVertical: 10 },
+  loginBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#4285F4",
+    backgroundColor: "#6366f1",
     padding: 14,
     borderRadius: 12,
     gap: 12,
     width: "100%",
     marginTop: 8,
   },
-  googleBtnText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+  loginBtnDisabled: { opacity: 0.6 },
+  loginBtnText: { color: "#fff", fontSize: 16, fontWeight: "600" },
 });

@@ -46,3 +46,4 @@ app-example
 .superpowers/
 docs
 scripts
+eas.json

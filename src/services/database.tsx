@@ -20,6 +20,7 @@ import {
 import type { ConfirmArgs } from "@/utils/leads";
 import { CollectionAdapter, faqAdapter, productAdapter } from "./adapters";
 import { cacheRead, cacheWrite } from "./cache";
+import { retryDelay } from "@/utils/retry";
 import {
   applyConstraints,
   Constraint,
@@ -110,6 +111,7 @@ function startWatch<T extends { id: string }>(
   let hadSubscribed = false;
   let rows: T[] = [];
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let attempt = 0; // ketma-ket muvaffaqiyatsiz yuklashlar soni
 
   const plain = isPlainOrdered(constraints);
   const compare = makeComparator(constraints);
@@ -129,13 +131,28 @@ function startWatch<T extends { id: string }>(
       if (!active) return;
       rows = raw.map(toDoc);
       loaded = true;
+      attempt = 0;
       emit();
     } catch (error) {
       if (!active) return;
       // Kirilmagan holatda (anon) ruxsat xatosi kutiladi: kirgandan keyin qayta yuklanadi (pastda)
       const { data: s } = await supabase.auth.getSession();
-      if (s.session) console.error(`Error watching ${table}:`, error);
-      else console.warn(`watch ${table}: tizimga kirilmagan, kirgandan keyin qayta yuklanadi`);
+      if (!active) return;
+      if (s.session) {
+        // Vaqtinchalik xato (masalan migratsiyadan keyin PostgREST sxema keshi hali yangilanmagan,
+        // tarmoq uzilishi): oshib boruvchi kutish bilan qayta uriniladi, aks holda ilova qayta
+        // ochilguncha bo'sh qoladi (ReferenceData har kolleksiya uchun bitta watch ochadi).
+        const delay = retryDelay(attempt++);
+        if (delay !== null) {
+          console.warn(`watch ${table}: yuklash xatosi, ${delay} ms dan keyin qayta uriniladi`, error);
+          if (timer) clearTimeout(timer);
+          timer = setTimeout(load, delay);
+        } else {
+          console.error(`Error watching ${table}:`, error);
+        }
+      } else {
+        console.warn(`watch ${table}: tizimga kirilmagan, kirgandan keyin qayta yuklanadi`);
+      }
       // Keshdan ko'rsatilgan ma'lumot bo'lsa saqlaymiz; aks holda ekranlar "loading" da qolmasin
       if (!loaded && rows.length === 0) onFailure();
     }
@@ -159,7 +176,10 @@ function startWatch<T extends { id: string }>(
 
   // Login'dan oldin ochilgan watch (masalan chat ro'yxati) kirgandan keyin o'zi yangilansin
   const { data: authSub } = supabase.auth.onAuthStateChange((event) => {
-    if (event === "SIGNED_IN") scheduleLoad();
+    if (event === "SIGNED_IN") {
+      attempt = 0;
+      scheduleLoad();
+    }
   });
 
   let channel: ReturnType<typeof supabase.channel> | null = null;
