@@ -8,7 +8,7 @@ import {
   findCustomerMatches,
   leadItems,
 } from "@/utils/leads";
-import { phonesMatch } from "@/utils/phone";
+import { findCustomerByPhone } from "@/utils/customers";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useRouter } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -58,9 +58,8 @@ const ConfirmLeadModal = ({ visible, lead, onClose }: Props) => {
     }
     if (initializedRef.current) return;
     initializedRef.current = true;
-    // Telefon aynan bitta mijozga mos kelsa — oldindan tanlanadi
-    const byPhone = lead.phone ? customers.filter((c) => phonesMatch(c.phone, lead.phone)) : [];
-    setCustomerId(byPhone.length === 1 ? byPhone[0].id : null);
+    // Telefon mavjud mijozga mos kelsa — avtomatik shu mijoz tanlanadi
+    setCustomerId(findCustomerByPhone(customers, lead.phone)?.id ?? null);
     setQuery("");
     setLotId("");
     setDeliveryPrice("");

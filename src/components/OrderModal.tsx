@@ -2,7 +2,8 @@ import { auth } from "@/supabase/auth";
 import { Customer, Order, WithId } from "@/interfaces";
 import { useRefData } from "@/providers/ReferenceData";
 import db from "@/services/database";
-import { digitsOnly, phonesMatch } from "@/utils/phone";
+import { findCustomerByPhone } from "@/utils/customers";
+import { digitsOnly } from "@/utils/phone";
 import { districtsOfRegion, findDistrictName, findRegion } from "@/utils/regions";
 import React, {
   useCallback,
@@ -103,7 +104,7 @@ const OrderModal: React.FC<OrderModalProps> = ({
   const handlePhoneChange = useCallback(
     (phone: string) => {
       if (digitsOnly(phone).length >= 9) {
-        const found = customers.find((c) => phonesMatch(c.phone, phone));
+        const found = findCustomerByPhone(customers, phone);
         if (found) {
           selectCustomer(found);
           return;
@@ -217,6 +218,12 @@ const OrderModal: React.FC<OrderModalProps> = ({
     setSaving(true);
     try {
       let finalCustomerId = form.customer_id;
+
+      // ID tanlanmagan bo'lsa ham telefon bo'yicha mavjud mijozni qayta ishlatamiz (takroriy yaratmaslik)
+      if (!finalCustomerId) {
+        finalCustomerId =
+          findCustomerByPhone(customers, form.customer_phone)?.id ?? "";
+      }
 
       // If customer doesn't exist, create it
       if (!finalCustomerId) {
