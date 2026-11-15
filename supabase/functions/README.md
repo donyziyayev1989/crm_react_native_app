@@ -36,3 +36,36 @@ curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
 ## Testlar
 
 `node --test "supabase/functions/_tests/*.test.mjs"` (Node 22+; Deno shart emas — `_shared` Deno API ishlatmaydi).
+
+## Yangi lead push bildirishnomalari (`notify-lead`)
+
+Sayt (`public.create_lead`) va Telegram bot `crm.leads` ga yozadi; `crm.notify_new_lead` triggeri (migratsiya
+`0019_push_notifications.sql`, pg_net) `notify-lead` ni chaqiradi, u faol admin/operator qurilmalariga
+Expo Push yuboradi. `legacy` (import qilingan) va `state <> 'new'` leadlar bildirishnoma bermaydi.
+
+`supabase/config.toml`:
+
+```toml
+[functions.notify-lead]
+verify_jwt = false
+```
+
+Sozlash (bir marta):
+
+```
+supabase secrets set PUSH_WEBHOOK_SECRET=<tasodifiy uzun satr>
+supabase functions deploy notify-lead --no-verify-jwt
+```
+
+SQL muharririda (qiymatlar migratsiyada yo'q, `crm.private_config` ga yoziladi; sir yuqoridagi bilan bir xil):
+
+```sql
+insert into crm.private_config (key, value) values
+  ('push_function_url', 'https://<project-ref>.supabase.co/functions/v1/notify-lead'),
+  ('push_secret', '<PUSH_WEBHOOK_SECRET>')
+on conflict (key) do update set value = excluded.value;
+```
+
+Android uchun Expo'ga FCM V1 kaliti kerak: `eas credentials` -> Android -> Google Service Account Key (FCM V1).
+Ilova qayta build qilinadi (`expo-notifications`, `google-services.json` qo'shildi).
+Ixtiyoriy: `EXPO_ACCESS_TOKEN` (Expo "enhanced push security" yoqilgan bo'lsa).

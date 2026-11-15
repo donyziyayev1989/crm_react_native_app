@@ -194,3 +194,51 @@ export function eventAffects(
     });
   return matches(oldRow) || matches(newRow);
 }
+
+// ─── Oflayn: xotiradagi baholash ────────────────────────────────────────────
+// Server so'rovi bajarilmaganda (internet yo'q) kesh snapshot'idan javob yasash uchun.
+
+/** Hujjat maydoni (cheklovdagi nom camelCase yoki snake_case bo'lishi mumkin) */
+const docValue = (doc: Record<string, any>, field: string): any => doc[toField(toColumn(field))];
+
+/** Hujjat barcha `where` shartlariga mos keladimi (orderBy/limit e'tiborga olinmaydi) */
+export function matchesConstraints(doc: Record<string, any>, constraints: Constraint[]): boolean {
+  const wheres = constraints.filter((c): c is Extract<Constraint, { kind: "where" }> => c.kind === "where");
+  const consumed = new Set<Constraint>();
+
+  // Prefiks qidiruv juftligi — serverdagi `ilike 'q%'` kabi (registrga befarq)
+  for (const lo of wheres) {
+    if (lo.op !== ">=" || typeof lo.value !== "string") continue;
+    const hi = wheres.find(
+      (c) => c.field === lo.field && c.op === "<=" && c.value === lo.value + PREFIX_END,
+    );
+    if (!hi) continue;
+    consumed.add(lo);
+    consumed.add(hi);
+    const v = docValue(doc, lo.field);
+    if (typeof v !== "string" || !v.toLowerCase().startsWith(lo.value.toLowerCase())) return false;
+  }
+
+  return wheres.every((c) => {
+    if (consumed.has(c)) return true;
+    const v = docValue(doc, c.field);
+    switch (c.op) {
+      case "==": return v === c.value;
+      case "!=": return v != null && v !== c.value; // SQL: NULL != x — qator chiqmaydi
+      case ">": return v != null && v > c.value;
+      case ">=": return v != null && v >= c.value;
+      case "<": return v != null && v < c.value;
+      case "<=": return v != null && v <= c.value;
+      case "in": return Array.isArray(c.value) && c.value.includes(v);
+      case "array-contains": return Array.isArray(v) && v.includes(c.value);
+    }
+  });
+}
+
+/** where bo'yicha filtr + orderBy bo'yicha tartib + limit (server so'rovining xotiradagi nusxasi) */
+export function evaluateRows<T extends Record<string, any>>(rows: T[], constraints: Constraint[]): T[] {
+  let out = rows.filter((r) => matchesConstraints(r, constraints));
+  if (constraints.some((c) => c.kind === "orderBy")) out = [...out].sort(makeComparator(constraints));
+  const lim = getLimit(constraints);
+  return lim !== null ? out.slice(0, lim) : out;
+}

@@ -18,20 +18,34 @@ import {
   WithId,
 } from "@interfaces/index";
 import type { ConfirmArgs } from "@/utils/leads";
-import { CollectionAdapter, faqAdapter, productAdapter } from "./adapters";
+import { CollectionAdapter, faqAdapter, productAdapter, uuidv4 } from "./adapters";
 import { cacheRead, cacheWrite } from "./cache";
+import { isOnline, subscribeConnectivity } from "./connectivity";
+import {
+  getOps,
+  hasPending,
+  onOpSettled,
+  outboxEnqueue,
+  outboxReady,
+  registerExecutor,
+  subscribeOutbox,
+} from "./outbox";
+import { applyOps, PendingOp } from "./overlay";
+import { isNetworkError } from "@/utils/network";
 import { retryDelay } from "@/utils/retry";
 import {
   applyConstraints,
   Constraint,
   docToRow,
   eventAffects,
+  evaluateRows,
   getLimit,
   isPlainOrdered,
   makeComparator,
   mapFields,
   rowToDoc,
   toColumn,
+  toField,
   where as whereConstraint,
 } from "./query";
 
@@ -89,7 +103,14 @@ interface WatchOptions {
   schema?: Schema;
   /** Filtr/tartib uchun maydon → ustun ifodasi (adapterdan) */
   columns?: Record<string, string>;
+  /** Jadval snapshot'i (oflayn o'qish uchun) saqlansin — scope'siz kolleksiyalar */
+  snapshot?: boolean;
+  /** Yuborilmagan oflayn yozuvlar natijaga qo'shilsin */
+  offline?: boolean;
 }
+
+/** Jadval snapshot'ining kesh kaliti (filtrsiz watch to'liq jadvalni saqlaydi) */
+const snapshotKey = (schema: Schema, table: string) => `snap:${schema}.${table}`;
 
 /**
  * `watch` yadrosi: birinchi fetch + Realtime. Filtrsiz (faqat orderBy) so'rovlar xotirada
@@ -112,17 +133,24 @@ function startWatch<T extends { id: string }>(
   let rows: T[] = [];
   let timer: ReturnType<typeof setTimeout> | null = null;
   let attempt = 0; // ketma-ket muvaffaqiyatsiz yuklashlar soni
+  let failedLoad = false;
 
   const plain = isPlainOrdered(constraints);
   const compare = makeComparator(constraints);
-  const cacheKey = plain
-    ? `${schema === "crm" ? "" : `${schema}.`}${table}|${constraints.map((c) => (c.kind === "orderBy" ? `${c.field}:${c.dir}` : "")).join(",")}`
-    : null;
+  const snapKey = opts.snapshot ? snapshotKey(schema, table) : null;
+  const coll = opts.offline ? `${schema}.${table}` : null;
+
+  /** Server/kesh qatorlari + yuborilmagan oflayn o'zgarishlar */
+  const view = (): T[] => {
+    const pending = coll ? getOps(coll) : [];
+    return pending.length ? applyOps(rows, pending, constraints) : rows;
+  };
 
   const emit = () => {
     if (!active) return;
-    onRows(rows);
-    if (cacheKey) cacheWrite(cacheKey, rows);
+    onRows(view());
+    // Faqat to'liq (filtrsiz) server javobi snapshot bo'la oladi
+    if (snapKey && plain && loaded) cacheWrite(snapKey, rows);
   };
 
   const load = async () => {
@@ -131,10 +159,12 @@ function startWatch<T extends { id: string }>(
       if (!active) return;
       rows = raw.map(toDoc);
       loaded = true;
+      failedLoad = false;
       attempt = 0;
       emit();
     } catch (error) {
       if (!active) return;
+      failedLoad = true;
       // Kirilmagan holatda (anon) ruxsat xatosi kutiladi: kirgandan keyin qayta yuklanadi (pastda)
       const { data: s } = await supabase.auth.getSession();
       if (!active) return;
@@ -154,7 +184,11 @@ function startWatch<T extends { id: string }>(
         console.warn(`watch ${table}: tizimga kirilmagan, kirgandan keyin qayta yuklanadi`);
       }
       // Keshdan ko'rsatilgan ma'lumot bo'lsa saqlaymiz; aks holda ekranlar "loading" da qolmasin
-      if (!loaded && rows.length === 0) onFailure();
+      if (!loaded) {
+        const v = view();
+        if (v.length > 0) onRows(v);
+        else onFailure();
+      }
     }
   };
 
@@ -163,16 +197,36 @@ function startWatch<T extends { id: string }>(
     timer = setTimeout(load, 150);
   };
 
-  // Keshdan darhol ko'rsatish (server javobi kelguncha)
-  if (cacheKey) {
-    cacheRead(cacheKey).then((cached) => {
-      if (active && !loaded && cached) {
-        rows = cached as T[];
-        onRows(rows);
+  // Snapshot'dan darhol ko'rsatish (server javobi kelguncha yoki internet yo'qligida)
+  if (snapKey) {
+    Promise.all([cacheRead(snapKey), outboxReady]).then(([snap]) => {
+      if (active && !loaded && snap) {
+        rows = plain ? ([...snap] as T[]).sort(compare) : evaluateRows(snap as T[], constraints);
+        onRows(view());
       }
     });
   }
   load();
+
+  // Internet qaytganda yuklanmay qolgan watch qayta urinadi; yuborilgan oflayn yozuvlar refetch qilinadi
+  const unsubNet = subscribeConnectivity((on) => {
+    if (on && active && (!loaded || failedLoad)) {
+      attempt = 0;
+      scheduleLoad();
+    }
+  });
+  const unsubOutbox = coll
+    ? subscribeOutbox(() => {
+        if (!active) return;
+        const v = view();
+        if (loaded || rows.length > 0 || v.length > 0) onRows(v);
+      })
+    : () => {};
+  const unsubSettled = coll
+    ? onOpSettled((c) => {
+        if (c === coll && active) scheduleLoad();
+      })
+    : () => {};
 
   // Login'dan oldin ochilgan watch (masalan chat ro'yxati) kirgandan keyin o'zi yangilansin
   const { data: authSub } = supabase.auth.onAuthStateChange((event) => {
@@ -211,7 +265,7 @@ function startWatch<T extends { id: string }>(
       .subscribe((status: string) => {
         if (status === "SUBSCRIBED") {
           // Aloqa uzilib qayta tiklanganda o'tkazib yuborilgan o'zgarishlar uchun
-          if (hadSubscribed) scheduleLoad();
+          if (hadSubscribed || !loaded) scheduleLoad();
           hadSubscribed = true;
         }
       });
@@ -221,6 +275,9 @@ function startWatch<T extends { id: string }>(
     active = false;
     if (timer) clearTimeout(timer);
     authSub.subscription.unsubscribe();
+    unsubNet();
+    unsubOutbox();
+    unsubSettled();
     if (channel) supabase.removeChannel(channel);
   };
 }
@@ -232,6 +289,8 @@ interface CollectionOptions<T> {
   realtime?: boolean;
   /** Qator <-> hujjat moslashtiruvchi (ko'p tilli sayt jadvallari); yo'q bo'lsa camelCase xaritasi */
   adapter?: CollectionAdapter<T>;
+  /** Internet yo'qligida yozuvlar navbatga tushadi va ulanganda yuboriladi (scope'siz kolleksiyalar) */
+  offline?: boolean;
 }
 
 /**
@@ -245,7 +304,17 @@ function createCollection<T>(
 ): CollectionMethods<T> {
   const schema: Schema = opts.schema ?? "crm";
   const adapter = opts.adapter;
-  const watchOpts: WatchOptions = { realtime: opts.realtime, schema, columns: adapter?.columns };
+  // Snapshot (oflayn o'qish) va oflayn yozuv faqat scope'siz kolleksiyalarda
+  const snapshot = !scope;
+  const coll = `${schema}.${table}`;
+  const canOverlay = snapshot && !!opts.offline;
+  const watchOpts: WatchOptions = {
+    realtime: opts.realtime,
+    schema,
+    columns: adapter?.columns,
+    snapshot,
+    offline: canOverlay,
+  };
   const q = () => tableOf(schema, table);
 
   const scoped = (constraints: Constraint[]): Constraint[] =>
@@ -259,66 +328,155 @@ function createCollection<T>(
   const toDoc = (row: Record<string, any>): any =>
     adapter ? adapter.fromRow(row) : rowToDoc<any>(row);
 
+  /** Oxirgi server snapshot'i (oflayn o'qish uchun) */
+  const snapshotDocs = async (): Promise<any[] | undefined> =>
+    snapshot ? cacheRead(snapshotKey(schema, table)) : undefined;
+
+  /** Yuborilmagan oflayn o'zgarishlarni hujjatlar ustiga qo'llash */
+  const withPending = async (docs: any[], constraints?: Constraint[]): Promise<any[]> => {
+    if (!canOverlay) return docs;
+    await outboxReady;
+    return applyOps(docs, getOps(coll), constraints);
+  };
+
+  // ─── Serverga yozish (onlayn yo'l va navbat executor'i bir xil kodni ishlatadi) ───
+
+  /** Idempotent: qayta yuborilsa (javob yo'qolgan bo'lsa) dublikat yaratmaydi */
+  const insertRow = async (row: Record<string, any>): Promise<void> => {
+    const { error } = await q().upsert(row, { onConflict: "id", ignoreDuplicates: true });
+    if (error) throw error;
+  };
+
+  const updateDoc = async (id: string, data: Partial<Omit<T, "id">>): Promise<void> => {
+    let row: Record<string, any>;
+    if (adapter) {
+      // Ko'p tilli ustunlar: mavjud jsonb o'qiladi va faqat `uz` almashtiriladi (ru/en saqlanadi)
+      const touches = adapter.mergeColumns.some((c) => (data as any)[c] !== undefined);
+      let existing: Record<string, any> = {};
+      if (touches) {
+        const { data: cur, error } = await q()
+          .select(adapter.mergeColumns.join(","))
+          .eq("id", id)
+          .maybeSingle();
+        if (error) throw error;
+        if (!cur) return; // qator yo'q — oddiy update kabi hech narsa qilinmaydi
+        existing = cur as Record<string, any>;
+      }
+      row = adapter.toRow(data as Partial<T>, existing);
+      if (Object.keys(row).length === 0) return;
+    } else {
+      row = docToRow(data as any);
+    }
+    const { error } = await q().update(row).eq("id", id);
+    if (error) throw error;
+  };
+
+  const deleteDoc = async (id: string): Promise<void> => {
+    const { error } = await q().delete().eq("id", id);
+    if (error) throw error;
+  };
+
+  const setDoc = async (id: string, data: Partial<T>): Promise<void> => {
+    if (adapter) {
+      // Upsert yarim qator yozib qo'yishi mumkin (majburiy ko'p tilli ustunlar) — create/update ishlating
+      throw new Error(`db.${table}.set() qo'llab-quvvatlanmaydi: create() yoki update() ishlating`);
+    }
+    const row: Record<string, any> = { ...docToRow(data as any), id };
+    if (scope) row[scope.column] = scope.value;
+    const { error } = await q().upsert(row, { onConflict: "id" });
+    if (error) throw error;
+  };
+
+  if (canOverlay) {
+    registerExecutor(coll, async (op: PendingOp) => {
+      switch (op.kind) {
+        case "create": return insertRow(op.row ?? {});
+        case "update": return updateDoc(op.id, (op.data ?? {}) as any);
+        case "delete": return deleteDoc(op.id);
+        case "set": return setDoc(op.id, (op.data ?? {}) as any);
+      }
+    });
+  }
+
+  /**
+   * Yozish: navbatda yuborilmagan o'zgarish bor yoki internet yo'q bo'lsa — darhol navbatga (tartib
+   * buzilmasin); aks holda serverga, tarmoq xatosi bo'lsa navbatga. Boshqa xatolar chaqiruvchiga qaytadi.
+   */
+  const mutate = async (op: Omit<PendingOp, "opId" | "ts">, run: () => Promise<void>): Promise<void> => {
+    await outboxReady;
+    if (hasPending() || !isOnline()) return outboxEnqueue(op);
+    try {
+      await run();
+    } catch (e) {
+      if (!isNetworkError(e)) throw e;
+      await outboxEnqueue(op);
+    }
+  };
+
+  /** Server so'rovi tarmoq xatosi bilan tugasa — snapshot'dan; snapshot yo'q bo'lsa xato qaytadi */
+  async function fromSnapshotOnNetworkError<R>(e: unknown, local: (snap: any[]) => R): Promise<R> {
+    const snap = isNetworkError(e) ? await snapshotDocs() : undefined;
+    if (!snap) throw e;
+    return local(snap);
+  }
+
   return {
     list: async (...constraints: Constraint[]): Promise<T[]> => {
-      const rows = await fetchRows(table, mapFields(scoped(constraints), adapter?.columns), schema);
-      return rows.map((r) => strip({ ...toDoc(r) }) as T);
+      const all = scoped(constraints);
+      let docs: any[];
+      try {
+        const rows = await fetchRows(table, mapFields(all, adapter?.columns), schema);
+        docs = rows.map(toDoc);
+      } catch (e) {
+        docs = await fromSnapshotOnNetworkError(e, (snap) => evaluateRows(snap, all));
+      }
+      docs = await withPending(docs, all);
+      return docs.map((d) => strip({ ...d }) as T);
     },
 
     get: async (id: string): Promise<T | null> => {
-      const { data, error } = await q().select("*").eq("id", id).maybeSingle();
-      if (error) throw error;
-      if (!data) return null;
-      return strip(toDoc(data)) as T;
+      let doc: any | null;
+      try {
+        const { data, error } = await q().select("*").eq("id", id).maybeSingle();
+        if (error) throw error;
+        doc = data ? toDoc(data) : null;
+      } catch (e) {
+        doc = await fromSnapshotOnNetworkError(e, (snap) => snap.find((r) => r.id === id) ?? null);
+      }
+      const merged = await withPending(doc ? [doc] : [], undefined);
+      const found = merged.find((r) => r.id === id);
+      return found ? (strip({ ...found }) as T) : null;
     },
 
     create: async (data: Omit<T, "id">): Promise<string> => {
       const row = adapter ? adapter.toRow(data as Partial<T>) : docToRow(data as any);
       if (scope) row[scope.column] = scope.value;
-      const { data: res, error } = await q().insert(row).select("id").single();
-      if (error) throw error;
-      return res.id as string;
+      if (!canOverlay) {
+        const { data: res, error } = await q().insert(row).select("id").single();
+        if (error) throw error;
+        return res.id as string;
+      }
+      // Id mijozda yaratiladi: oflayn yaratilgan yozuvga ham darhol havola qilish mumkin (buyurtma → mijoz)
+      const id: string = row.id ?? uuidv4();
+      row.id = id;
+      await mutate({ coll, kind: "create", id, data: toDoc(row), row }, () => insertRow(row));
+      return id;
     },
 
     update: async (id: string, data: Partial<Omit<T, "id">>): Promise<void> => {
-      let row: Record<string, any>;
-      if (adapter) {
-        // Ko'p tilli ustunlar: mavjud jsonb o'qiladi va faqat `uz` almashtiriladi (ru/en saqlanadi)
-        const touches = adapter.mergeColumns.some((c) => (data as any)[c] !== undefined);
-        let existing: Record<string, any> = {};
-        if (touches) {
-          const { data: cur, error } = await q()
-            .select(adapter.mergeColumns.join(","))
-            .eq("id", id)
-            .maybeSingle();
-          if (error) throw error;
-          if (!cur) return; // qator yo'q — oddiy update kabi hech narsa qilinmaydi
-          existing = cur as Record<string, any>;
-        }
-        row = adapter.toRow(data as Partial<T>, existing);
-        if (Object.keys(row).length === 0) return;
-      } else {
-        row = docToRow(data as any);
-      }
-      const { error } = await q().update(row).eq("id", id);
-      if (error) throw error;
+      if (!canOverlay) return updateDoc(id, data);
+      await mutate({ coll, kind: "update", id, data: data as any }, () => updateDoc(id, data));
     },
 
     delete: async (id: string): Promise<void> => {
-      const { error } = await q().delete().eq("id", id);
-      if (error) throw error;
+      if (!canOverlay) return deleteDoc(id);
+      await mutate({ coll, kind: "delete", id }, () => deleteDoc(id));
     },
 
     // Firestore setDoc(merge) kabi: yo'q bo'lsa yaratadi, bo'lsa faqat berilgan maydonlarni yangilaydi
     set: async (id: string, data: Partial<T>): Promise<void> => {
-      if (adapter) {
-        // Upsert yarim qator yozib qo'yishi mumkin (majburiy ko'p tilli ustunlar) — create/update ishlating
-        throw new Error(`db.${table}.set() qo'llab-quvvatlanmaydi: create() yoki update() ishlating`);
-      }
-      const row: Record<string, any> = { ...docToRow(data as any), id };
-      if (scope) row[scope.column] = scope.value;
-      const { error } = await q().upsert(row, { onConflict: "id" });
-      if (error) throw error;
+      if (!canOverlay) return setDoc(id, data);
+      await mutate({ coll, kind: "set", id, data: data as any }, () => setDoc(id, data));
     },
 
     watch: (callback: (data: T[]) => void, ...constraints: Constraint[]) =>
@@ -344,17 +502,35 @@ function createCollection<T>(
 
     sum: async (field: string, ...constraints: Constraint[]): Promise<number> => {
       const all = scoped(constraints);
-      // Tez yo'l: partiya bo'yicha buyurtmalar soni — serverda yig'iladi
-      const eq = all.length === 1 && all[0].kind === "where" && all[0].op === "==" ? all[0] : null;
-      if (table === "orders" && field === "product_count" && eq && toColumn(eq.field) === "lot_id") {
-        const { data, error } = await supabase.rpc("sum_orders_product_count", {
-          p_lot_id: eq.value,
-        });
-        if (error) throw error;
-        return Number(data) || 0;
+      const col = toColumn(field);
+      const localSum = async (): Promise<number | null> => {
+        const snap = await snapshotDocs();
+        if (!snap) return null;
+        const docs = await withPending(evaluateRows(snap, all), all);
+        return docs.reduce((acc, d) => acc + (Number(d[toField(col)]) || 0), 0);
+      };
+      // Yuborilmagan oflayn yozuvlar bo'lsa server yig'indisi eskirgan — mahalliy hisob (snapshot bor bo'lsa)
+      if (canOverlay && hasPending()) {
+        const local = await localSum();
+        if (local !== null) return local;
       }
-      const rows = await fetchRows(table, mapFields(all, adapter?.columns), schema);
-      return rows.reduce((acc, r) => acc + (Number(r[toColumn(field)]) || 0), 0);
+      try {
+        // Tez yo'l: partiya bo'yicha buyurtmalar soni — serverda yig'iladi
+        const eq = all.length === 1 && all[0].kind === "where" && all[0].op === "==" ? all[0] : null;
+        if (table === "orders" && field === "product_count" && eq && toColumn(eq.field) === "lot_id") {
+          const { data, error } = await supabase.rpc("sum_orders_product_count", {
+            p_lot_id: eq.value,
+          });
+          if (error) throw error;
+          return Number(data) || 0;
+        }
+        const rows = await fetchRows(table, mapFields(all, adapter?.columns), schema);
+        return rows.reduce((acc, r) => acc + (Number(r[col]) || 0), 0);
+      } catch (e) {
+        const local = isNetworkError(e) ? await localSum() : null;
+        if (local === null) throw e;
+        return local;
+      }
     },
   };
 }
@@ -372,25 +548,32 @@ const db = {
   // view: Realtime yo'q
   users: createCollection<User>("users", undefined, { realtime: false }),
   // Sayt bilan umumiy jadvallar — `public` sxemasida (crm'dagi bir xil nomli view'lar eski build'lar uchun)
-  lots: createCollection<ProductLot>("lots", undefined, { schema: "public" }),
-  orders: createCollection<Order>("orders"),
+  lots: createCollection<ProductLot>("lots", undefined, { schema: "public", offline: true }),
+  orders: createCollection<Order>("orders", undefined, { offline: true }),
   products: createCollection<Product>("products", undefined, {
     schema: "public",
     adapter: productAdapter(),
+    offline: true,
   }),
   regions: createCollection<Region>("regions"),
   districts: createCollection<District>("districts"),
-  customers: createCollection<Customer>("customers"),
-  tags: createCollection<Tag>("tags", undefined, { schema: "public" }),
+  customers: createCollection<Customer>("customers", undefined, { offline: true }),
+  tags: createCollection<Tag>("tags", undefined, { schema: "public", offline: true }),
   rates: createCollection<Rate>("rates"),
-  lost_products: createCollection<LostProduct>("lost_products", undefined, { schema: "public" }),
+  lost_products: createCollection<LostProduct>("lost_products", undefined, {
+    schema: "public",
+    offline: true,
+  }),
   leads: createCollection<Lead>("leads"),
   lead_chats: createCollection<LeadChat>("lead_chats"),
   // Sub-collections
   lead_messages: createSubCollection<LeadMessage>("lead_messages", "chat_id"),
   faqs: createCollection<FAQ>("faqs", undefined, { schema: "public", adapter: faqAdapter }),
   settings: createCollection<any>("settings"),
-  lot_expenses: createCollection<LotExpense>("lot_expenses", undefined, { schema: "public" }),
+  lot_expenses: createCollection<LotExpense>("lot_expenses", undefined, {
+    schema: "public",
+    offline: true,
+  }),
 };
 
 export default db;

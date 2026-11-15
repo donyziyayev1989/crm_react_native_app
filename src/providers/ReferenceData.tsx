@@ -119,6 +119,11 @@ export const ReferenceDataProvider = ({ children }: { children: ReactNode }) => 
         db.lots.watch((d) => { setLots(d as WithId<ProductLot>[]); mark("lots"); }, orderBy("date", "desc")),
         db.users.watch((d) => { setUsers(d as WithId<User>[]); mark("users"); }),
         db.customers.watch((d) => { setCustomers(d as WithId<Customer>[]); mark("customers"); }, orderBy("name", "asc")),
+        // Oflayn rejim uchun: ekranlar filtrli so'raydigan jadvallarning to'liq snapshot'i qurilmada
+        // saqlanib, Realtime bilan yangilanib turadi (ekranlar uni snapshot orqali o'qiydi).
+        db.orders.watch(() => {}),
+        db.lost_products.watch(() => {}),
+        db.lot_expenses.watch(() => {}),
       ];
     });
 

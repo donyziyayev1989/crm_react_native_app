@@ -1,4 +1,7 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { cacheClear } from "@/services/cache";
+import { unregisterPush } from "@/services/notifications";
+import { isNetworkError } from "../utils/network";
 import { supabase } from "./client";
 
 /** Ilova ichida ishlatiladigan foydalanuvchi (Firebase `currentUser` shakliga yaqin) */
@@ -56,13 +59,46 @@ async function resolveUser(session: { user: any } | null): Promise<AppUser | nul
     throw new NoAccessError();
   }
 
+  // Internet yo'q: oxirgi ma'lum profil (rol) ishlatiladi, aks holda admin ham operator bo'lib qoladi
+  const profileKey = PROFILE_KEY + u.id;
+  let profile = data;
+  if (error) {
+    try {
+      const raw = await AsyncStorage.getItem(profileKey);
+      if (raw) profile = JSON.parse(raw);
+    } catch {
+      // kesh yo'q
+    }
+  } else if (data) {
+    AsyncStorage.setItem(profileKey, JSON.stringify(data)).catch(() => {});
+  }
+
   return {
     uid: u.id,
     email: u.email ?? null,
-    displayName: data?.name || meta.full_name || meta.name || null,
+    displayName: profile?.name || meta.full_name || meta.name || null,
     photoURL: meta.avatar_url || meta.picture || null,
-    role: data?.role ?? null,
+    role: profile?.role ?? null,
   };
+}
+
+const PROFILE_KEY = "crm-profile:v1:";
+
+/**
+ * Internet yo'q va access token muddati o'tgan bo'lsa `getSession()` null qaytaradi (refresh
+ * bajarilmaydi), lekin sessiya xotirada saqlanib qoladi. Ilova oflayn ochilganda foydalanuvchi
+ * chiqib ketgan bo'lib ko'rinmasligi uchun saqlangan sessiyadan foydalanuvchini tiklaymiz;
+ * ulanish qaytganda Supabase tokenni o'zi yangilaydi.
+ */
+async function storedSessionUser(): Promise<{ user: any } | null> {
+  try {
+    const host = new URL(process.env.EXPO_PUBLIC_SUPABASE_URL ?? "").hostname;
+    const raw = await AsyncStorage.getItem(`sb-${host.split(".")[0]}-auth-token`);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed?.user && parsed?.refresh_token ? { user: parsed.user } : null;
+  } catch {
+    return null;
+  }
 }
 
 let initStarted = false;
@@ -70,9 +106,12 @@ function init() {
   if (initStarted) return;
   initStarted = true;
 
-  supabase.auth.getSession().then(async ({ data }) => {
+  supabase.auth.getSession().then(async ({ data, error }) => {
     try {
-      publish(await resolveUser(data.session));
+      let session: { user: any } | null = data.session;
+      // Sessiya yo'q, lekin sabab tarmoq (token yangilanmadi) bo'lsa — saqlangan sessiyadan tiklaymiz
+      if (!session && error && isNetworkError(error)) session = await storedSessionUser();
+      publish(await resolveUser(session));
     } catch {
       publish(null);
     }
@@ -124,6 +163,7 @@ export async function signInWithEmail(email: string, password: string): Promise<
 }
 
 export async function signOut(): Promise<void> {
+  await unregisterPush(); // sessiya hali amalda: token shu foydalanuvchidan olib tashlanadi
   await supabase.auth.signOut();
   await cacheClear();
   publish(null);

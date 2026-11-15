@@ -153,7 +153,8 @@ export function createHandler(deps: BotDeps) {
       } catch (e) {
         log("Fetch about_us error:", e);
       }
-      await sendMessage(chatId, info, MAIN_MENU);
+      // Bo'sh matnni Telegram rad etadi (400) — foydalanuvchi hech narsa ko'rmay qolmasin
+      await sendMessage(chatId, info.trim() || "Ma'lumot hozircha kiritilmagan.", MAIN_MENU);
       return;
     }
 
