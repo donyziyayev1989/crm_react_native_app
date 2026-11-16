@@ -1,10 +1,10 @@
+import CapacityBar from "@/components/CapacityBar";
 import Card from "@/components/Card";
 import Loading from "@/components/Loading";
 import { useSwipeableRows } from "@/hooks/useSwipeableRows";
 import { useRefData } from "@/providers/ReferenceData";
 import db, { where } from "@/services/database";
 import { formatDate } from "@/utils/format";
-import { lostPercent } from "@/utils/lots";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Stack, useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useMemo, useState } from "react";
@@ -136,7 +136,7 @@ const Lots = () => {
                   }
                 >
                   <Card>
-                    <View className="flex-row justify-between mb-1">
+                    <View className="flex-row justify-between">
                       <Text className="font-semibold text-base">
                         {item.name}
                       </Text>
@@ -151,72 +151,11 @@ const Lots = () => {
                         </Text>
                       </View>
                     </View>
-                    <View className="flex-row justify-between mt-1">
-                      <View className="flex-row items-center gap-1">
-                        <MaterialIcons
-                          name="inventory"
-                          size={14}
-                          color="#6366f1"
-                        />
-                        <Text className="text-sm text-gray-600">
-                          Tovar:{" "}
-                          <Text className="font-semibold text-gray-800">
-                            {item.product_count}
-                          </Text>
-                        </Text>
-                      </View>
-                      <View className="flex-row items-center gap-1">
-                        <MaterialIcons
-                          name="remove-circle-outline"
-                          size={14}
-                          color="#ef4444"
-                        />
-                        <Text className="text-sm text-gray-600">
-                          Yo'qotilgan:{" "}
-                          <Text className="font-semibold text-red-500">
-                            {item.lost_products || 0} ( {lostPercent(item)}% )
-                          </Text>
-                        </Text>
-                      </View>
-                    </View>
-                    {/* Qoldiq va jami buyurtmalar soni */}
-                    <View className="flex-row justify-between mt-1">
-                      <View className="flex-row items-center gap-1">
-                        <MaterialIcons
-                          name="assignment-turned-in"
-                          size={14}
-                          color="#6366f1"
-                        />
-                        <Text className="text-sm text-gray-600">
-                          Qoldiq:{" "}
-                          <Text className="font-semibold text-gray-800">
-                            {item.product_count - (item.lost_products || 0)}
-                          </Text>
-                        </Text>
-                      </View>
-                      <View className="flex-row items-center gap-1">
-                        <MaterialIcons
-                          name="shopping-cart"
-                          size={14}
-                          color="#6366f1"
-                        />
-                        <Text className="text-sm text-gray-600">
-                          Jami buyurtmalar:{" "}
-                          <Text
-                            className={`font-semibold ${
-                              item.order_count -
-                                item.product_count +
-                                (item.lost_products || 0) >
-                              0
-                                ? "text-red-500"
-                                : "text-gray-800"
-                            }`}
-                          >
-                            {item.order_count || 0}
-                          </Text>
-                        </Text>
-                      </View>
-                    </View>
+                    <CapacityBar
+                      planned={item.product_count}
+                      ordered={item.order_count}
+                      lost={item.lost_products || 0}
+                    />
                   </Card>
                 </Pressable>
               </ReanimatedSwipeable>
